@@ -4,7 +4,7 @@ The development fixture is the Alpari terminal at `C:\Program Files\Alpari MT5_2
 
 ## Current status
 
-The project has verified executable existence, data-directory existence, process path matching, process responsiveness, and a visible demo-account window title. It has not yet verified semantic UI controls or a real order result.
+The project has verified executable existence, data-directory existence, process path matching, process responsiveness, a visible demo-account window title, and UIA discovery of `New Order`, `Trade`, and the active `XAUUSD,M5` chart title. The real adapter validates the active chart symbol and prepares a request, but final execution controls and broker-result verification remain blocked.
 
 ## Required future adapter behavior
 
@@ -34,4 +34,4 @@ The only permitted automated validation target is the specified demo terminal:
 5. Dry-run SELL.
 6. Explicitly review account, symbol, volume, risk limits, and kill switch before any real demo order.
 
-The current CLI does not perform steps 4 or 5 against the real terminal.
+The current CLI performs steps 1–5 as non-order-producing dry-runs against the configured demo terminal when the active chart symbol is visible. It does not click final order controls, switch symbols, or verify a broker position.

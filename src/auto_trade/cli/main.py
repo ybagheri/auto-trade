@@ -12,6 +12,7 @@ from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError
 from ..domain.models import TradeSignal
 from ..domain.protocols import KillSwitch
+from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
 from ..infrastructure.logging import AuditLogger
 from ..infrastructure.terminal import WindowsTerminalDiscovery
@@ -29,6 +30,12 @@ def _parser() -> argparse.ArgumentParser:
     for name, help_text in commands:
         command = subparsers.add_parser(name, help=help_text)
         command.add_argument("signal_file", type=Path)
+        if name == "dry-run":
+            command.add_argument(
+                "--mock",
+                action="store_true",
+                help="use the fake terminal instead of inspecting MT5",
+            )
     subparsers.add_parser("run", help="run the configured signal loop")
     return parser
 
@@ -82,8 +89,13 @@ def main(argv: list[str] | None = None) -> int:
             demo_only=config.policy.demo_only,
             confirmation=config.policy.confirmation,
         )
+        terminal = (
+            DryRunTerminalAdapter()
+            if args.mock
+            else MT5DesktopAdapter(config.terminal_profile())
+        )
         workflow = ExecutionWorkflow(
-            adapter=DryRunTerminalAdapter(),
+            adapter=terminal,
             risk_engine=RiskEngine(config.risk),
             profile=config.terminal_profile(),
             policy=policy,

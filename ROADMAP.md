@@ -26,13 +26,13 @@
 
 - [x] Validate executable and data-directory existence.
 - [x] Match configured process executable path.
-- [ ] Match process ID, window title, and data-directory identity.
-- [ ] Add diagnostics for window controls, DPI, monitors, and permissions.
+- [x] Match process ID, window title, and data-directory identity.
+- [x] Add diagnostics for window controls, DPI, monitors, and permissions.
 
 ## Phase 4 — MT5 UI Automation
 
-- [ ] Inspect the demo terminal accessibility/UI Automation tree.
-- [ ] Implement terminal/window manager.
+- [x] Inspect the demo terminal accessibility/UI Automation tree.
+- [x] Implement terminal/window manager.
 - [ ] Implement semantic symbol selection.
 - [ ] Implement volume and SL/TP preparation.
 - [ ] Implement guarded BUY/SELL action.
@@ -65,7 +65,7 @@
 - [x] Unit tests for parsing, risk, state, idempotency, and provider behavior.
 - [x] Provider-to-workflow integration test.
 - [ ] Add controlled UI tests.
-- [ ] Perform demo connection, window, symbol, and dry-run checks.
+- [x] Perform demo connection, window, symbol, and dry-run checks.
 - [ ] Perform actual demo order only after explicit verification criteria pass.
 
 ## Phase 9 — Packaging

@@ -11,9 +11,10 @@ mypy src tests
 ## Current executed results
 
 - **PASS — mocked:** 15 unit and integration tests passed.
-- **PASS — environment:** MT5 executable, data directory, and configured process were found by diagnostics.
+- **PASS — environment:** MT5 executable, data directory, configured process, responsive demo window, and active `XAUUSD` chart were found.
+- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs completed without final execution controls; mock dry-run also passed.
 - **NOT RUN — real order:** no real BUY/SELL click or broker order was attempted.
-- **MANUAL TEST REQUIRED:** UI tree, DPI, symbol selection, order dialog, and position verification.
+- **MANUAL TEST REQUIRED:** order dialog controls, actual symbol switching, DPI behavior, and independent position verification.
 
 ## Test layers
 

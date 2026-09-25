@@ -16,6 +16,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+windows = [
+    "pywinauto>=0.6",
+]
 
 [project.scripts]
 auto-trade = "auto_trade.cli:main"

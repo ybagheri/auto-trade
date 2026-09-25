@@ -35,7 +35,7 @@ flowchart LR
     Verify --> Audit[Audit Log]
 ```
 
-The real MT5 desktop adapter is intentionally not enabled in this first milestone. The dry-run adapter prepares a request but cannot click an order control or claim broker acceptance.
+The MT5 desktop adapter can inspect the configured demo process/window and validate the active chart symbol, but final execution controls and verification are intentionally blocked. The `--mock` dry-run path remains available for CI without MT5.
 
 ## How It Works
 
@@ -75,7 +75,7 @@ Only the specified demo terminal should be used for development testing. See [MT
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,windows]"
 ```
 
 ## Quick Start
@@ -83,14 +83,14 @@ python -m pip install -e ".[dev]"
 ```powershell
 python -m auto_trade diagnostics
 python -m auto_trade test-signal examples\signals\example.json
-python -m auto_trade dry-run examples\signals\example.json
+python -m auto_trade dry-run --mock examples\signals\example.json
 ```
 
 The example is historical and may be rejected as expired. Create a signal with a current UTC timestamp for a dry-run test.
 
 ## Demo Mode
 
-Demo-only mode is enabled by default. The current CLI dry-run path does not connect to or place an order in MT5. Real demo order execution is blocked until a terminal adapter and verification strategy pass controlled validation.
+Demo-only mode is enabled by default. The normal CLI dry-run path connects to and inspects the configured demo terminal, validates the active chart symbol, and stops before any final execution control. Use `--mock` for a terminal-independent dry run. Real demo order execution is blocked until verification passes controlled validation.
 
 ## Configuration
 
@@ -127,9 +127,10 @@ mypy src tests
 Current automated status:
 
 - **PASS — mocked:** 15 unit and integration tests executed.
-- **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, and running process.
+- **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, responsive demo window, and active `XAUUSD` chart title.
+- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs completed without a final execution control; CI mock dry-run also passed.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
-- **MANUAL TEST REQUIRED:** UI control tree, DPI behavior, symbol selection, order dialog, and position verification.
+- **MANUAL TEST REQUIRED:** order dialog controls, actual symbol switching, DPI behavior, and independent position verification.
 
 ## Documentation
 
