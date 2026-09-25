@@ -8,6 +8,7 @@ from .models import (
     AuditEvent,
     ExecutionResult,
     OrderRequest,
+    PositionSnapshot,
     TerminalProfile,
     TradeSignal,
 )
@@ -35,6 +36,10 @@ class TradingTerminalAdapter(Protocol):
     def verify_execution(self, request: OrderRequest) -> ExecutionResult: ...
 
     def close_position(self, position_id: str) -> ExecutionResult: ...
+
+
+class PositionSnapshotProvider(Protocol):
+    def positions(self) -> tuple[PositionSnapshot, ...]: ...
 
 
 class AuditSink(Protocol):

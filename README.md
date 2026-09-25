@@ -18,6 +18,8 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Kill switch, demo-only policy, dry-run workflow, duplicate signal protection, and explicit unknown execution state.
 - Execution state machine with logged transitions.
 - Windows MT5 process discovery using configured executable path and data directory.
+- Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
+- Position-change verification abstraction and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - CLI diagnostics and non-executing dry-run processing.
 - Mocked unit and integration tests that do not require MT5.
@@ -126,11 +128,12 @@ mypy src tests
 
 Current automated status:
 
-- **PASS — mocked:** 15 unit and integration tests executed.
+- **PASS — mocked:** 23 unit and integration tests executed.
 - **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, responsive demo window, and active `XAUUSD` chart title.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs completed without a final execution control; CI mock dry-run also passed.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
-- **MANUAL TEST REQUIRED:** order dialog controls, actual symbol switching, DPI behavior, and independent position verification.
+- **PASS — semantic preparation:** real-terminal dry-runs opened the UIA order dialog, set Symbol/Volume/optional fields, and closed it without final execution.
+- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, order rejection handling, and independent broker-position verification.
 
 ## Documentation
 
@@ -142,11 +145,13 @@ Current automated status:
 - [Safety](docs/SAFETY.md)
 - [Compliance](docs/COMPLIANCE.md)
 - [Testing](docs/TESTING.md)
+- [Verification](docs/VERIFICATION.md)
+- [Recovery](docs/RECOVERY.md)
 - [Persian documentation](README.fa.md)
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). The next milestones are terminal/window control discovery, dry-run UI preparation, independent verification, controlled demo validation, and only then a guarded live execution path.
+See [ROADMAP.md](ROADMAP.md). The next milestones are real position snapshot verification, durable recovery review, controlled demo rejection tests, and only then a guarded live execution path.
 
 ## Contributing
 

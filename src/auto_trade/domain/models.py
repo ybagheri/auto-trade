@@ -216,6 +216,33 @@ class SymbolInfo:
         self.digits = digits
 
 
+class PositionSnapshot:
+    def __init__(
+        self,
+        position_id: str,
+        symbol: str,
+        side: str,
+        volume: Decimal,
+    ) -> None:
+        if not position_id.strip():
+            raise ValueError("position_id is required")
+        if side.upper() not in {"BUY", "SELL"}:
+            raise ValueError("position side must be BUY or SELL")
+        if volume <= 0:
+            raise ValueError("position volume must be positive")
+        self.position_id = position_id
+        self.symbol = symbol.upper()
+        self.side = side.upper()
+        self.volume = volume
+
+
+class VerificationOutcome:
+    def __init__(self, verified: bool, message: str, position_id: str | None = None) -> None:
+        self.verified = verified
+        self.message = message
+        self.position_id = position_id
+
+
 class ExecutionResult:
     def __init__(
         self,

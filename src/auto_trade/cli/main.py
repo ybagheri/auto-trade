@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from ..adapters.terminal import DryRunTerminalAdapter
+from ..application.ledger import JsonExecutionLedger
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError
@@ -101,6 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             policy=policy,
             kill_switch=KillSwitch(),
             audit=audit.record,
+            ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
         )
         result = workflow.execute(signal)
         output = {

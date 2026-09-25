@@ -12,10 +12,12 @@ from .models import (
     AuditEvent,
     ExecutionResult,
     OrderRequest,
+    PositionSnapshot,
     RiskLimits,
     SymbolInfo,
     TerminalProfile,
     TradeSignal,
+    VerificationOutcome,
 )
 
 __all__ = [
@@ -32,10 +34,12 @@ __all__ = [
     "InvalidSignalError",
     "OrderAction",
     "OrderRequest",
+    "PositionSnapshot",
     "RiskLimits",
     "SafetyViolation",
     "SymbolInfo",
     "TerminalProfile",
     "TerminalNotFoundError",
     "TradeSignal",
+    "VerificationOutcome",
 ]

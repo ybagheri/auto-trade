@@ -21,6 +21,7 @@ from ..domain.models import (
     TradeSignal,
 )
 from ..domain.protocols import KillSwitch, TradingTerminalAdapter
+from .ledger import ExecutionLedger
 from .risk import RiskEngine
 from .state_machine import ExecutionStateMachine
 
@@ -35,6 +36,7 @@ class ExecutionWorkflow:
         kill_switch: KillSwitch,
         audit: Callable[[AuditEvent], None],
         now: Callable[[], datetime] | None = None,
+        ledger: ExecutionLedger | None = None,
     ) -> None:
         self.adapter = adapter
         self.risk_engine = risk_engine
@@ -43,6 +45,7 @@ class ExecutionWorkflow:
         self.kill_switch = kill_switch
         self.audit = audit
         self.now = now or (lambda: datetime.now(UTC))
+        self.ledger = ledger
         self.seen_signal_ids: set[str] = set()
         self.recent_executions: list[datetime] = []
 
@@ -59,7 +62,11 @@ class ExecutionWorkflow:
             decision = self.risk_engine.validate(
                 signal,
                 account=account,
-                seen_signal_ids=self.seen_signal_ids,
+                seen_signal_ids=(
+                    {signal.signal_id}
+                    if self.ledger is not None and self.ledger.contains(signal.signal_id)
+                    else self.seen_signal_ids
+                ),
                 recent_executions=self.recent_executions,
                 now=self.now(),
             )
@@ -96,6 +103,8 @@ class ExecutionWorkflow:
                     ExecutionState.DRY_RUN_COMPLETED,
                     "validated; final execution control not used",
                 )
+            if self.ledger is not None:
+                self.ledger.record_attempt(signal.signal_id, execution_id)
             machine.transition(ExecutionState.EXECUTING)
             try:
                 adapter_result = self.adapter.execute_order(request)
@@ -225,5 +234,7 @@ class ExecutionWorkflow:
             order_reference,
             error,
         )
+        if self.ledger is not None:
+            self.ledger.record_result(result)
         self._record(execution_id, signal, "result", message, state.value, error)
         return result

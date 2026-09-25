@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 import re
+import time
+from decimal import Decimal
 from typing import Any
 
 from ...domain.enums import AccountType
@@ -13,6 +15,7 @@ from ..terminal.discovery import WindowsTerminalDiscovery
 class MT5WindowManager:
     def __init__(self) -> None:
         self._window: Any | None = None
+        self._order_dialog: Any | None = None
 
     def find(self, profile: TerminalProfile) -> Any:
         try:
@@ -42,6 +45,106 @@ class MT5WindowManager:
         match = re.search(r"\[([A-Za-z0-9._#]+),", self.title)
         return match is not None and match.group(1).upper() == symbol.upper()
 
+    def open_order_dialog(self, timeout_seconds: float = 5.0) -> Any:
+        if self._order_dialog is not None:
+            return self._order_dialog
+        if self._window is None:
+            raise AutomationError("MT5 window is not connected")
+        menu_items = [
+            control
+            for control in self._window.descendants()
+            if control.element_info.control_type == "MenuItem"
+            and control.window_text() == "New Order"
+        ]
+        if not menu_items:
+            raise AutomationError("New Order control was not found")
+        menu_item = menu_items[0]
+        invoke = getattr(menu_item, "invoke", None)
+        if callable(invoke):
+            invoke()
+        else:
+            menu_item.click_input()
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            dialogs = [
+                control
+                for control in self._window.descendants()
+                if control.element_info.control_type == "Window"
+                and control.window_text().startswith("Order:")
+            ]
+            if dialogs:
+                self._order_dialog = dialogs[0]
+                return self._order_dialog
+            time.sleep(0.1)
+        raise AutomationError("MT5 order dialog did not become ready")
+
+    def close_order_dialog(self, timeout_seconds: float = 5.0) -> None:
+        if self._order_dialog is None:
+            return
+        close_buttons = [
+            control
+            for control in self._order_dialog.descendants()
+            if control.element_info.control_type == "Button"
+            and control.window_text() == "Close"
+        ]
+        if not close_buttons:
+            raise AutomationError("order dialog close control was not found")
+        close_buttons[-1].click_input()
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if not self._is_order_dialog_open():
+                self._order_dialog = None
+                return
+            time.sleep(0.1)
+        raise AutomationError("order dialog did not close")
+
+    def select_market_execution(self) -> None:
+        dialog = self.open_order_dialog()
+        buttons = [
+            control
+            for control in dialog.descendants()
+            if control.element_info.control_type == "Button"
+            and control.window_text() == "Market Execution"
+        ]
+        if not buttons:
+            raise AutomationError("Market Execution control was not found")
+        buttons[0].click_input()
+
+    def set_field(self, automation_id: str, value: str) -> None:
+        dialog = self.open_order_dialog()
+        control = self._find_edit(dialog, automation_id)
+        try:
+            control.set_edit_text(value)
+        except AttributeError as exc:
+            raise AutomationError(f"field {automation_id} is not editable") from exc
+
+    def read_field(self, automation_id: str) -> str:
+        dialog = self.open_order_dialog()
+        control = self._find_edit(dialog, automation_id)
+        try:
+            return str(control.get_value()).strip()
+        except AttributeError as exc:
+            raise AutomationError(f"field {automation_id} cannot be read") from exc
+
+    @staticmethod
+    def _find_edit(dialog: Any, automation_id: str) -> Any:
+        for control in dialog.descendants():
+            if (
+                control.element_info.control_type == "Edit"
+                and control.element_info.automation_id == automation_id
+            ):
+                return control
+        raise AutomationError(f"order field {automation_id} was not found")
+
+    def _is_order_dialog_open(self) -> bool:
+        if self._window is None:
+            return False
+        return any(
+            control.element_info.control_type == "Window"
+            and control.window_text().startswith("Order:")
+            for control in self._window.descendants()
+        )
+
 
 class MT5DesktopAdapter:
     def __init__(
@@ -70,14 +173,33 @@ class MT5DesktopAdapter:
     def select_symbol(self, symbol: str) -> None:
         if not self.connected:
             raise AutomationError("MT5 terminal is not connected")
-        if not self.window_manager.contains_symbol(symbol):
-            raise AutomationError(f"symbol is not visible in the active MT5 chart: {symbol}")
+        self.window_manager.open_order_dialog()
+        self.window_manager.set_field("10325", symbol.upper())
+        if not self.window_manager.read_field("10325").upper().startswith(symbol.upper()):
+            raise AutomationError(f"symbol field did not accept {symbol}")
         self.selected_symbol = symbol.upper()
 
     def prepare_order(self, request: OrderRequest) -> None:
         if self.selected_symbol != request.symbol:
             raise AutomationError("symbol was not selected")
-        self.prepared = request
+        try:
+            self.window_manager.select_market_execution()
+            self.window_manager.set_field("10333", self._format_decimal(request.volume))
+            if request.stop_loss is not None:
+                self.window_manager.set_field("10334", self._format_decimal(request.stop_loss))
+            if request.take_profit is not None:
+                self.window_manager.set_field("10336", self._format_decimal(request.take_profit))
+            if request.signal.comment:
+                self.window_manager.set_field("1001", request.signal.comment)
+            if self.window_manager.read_field("10333") != self._format_decimal(request.volume):
+                raise AutomationError("volume field did not accept the request")
+            self.prepared = request
+        finally:
+            self.window_manager.close_order_dialog()
+
+    @staticmethod
+    def _format_decimal(value: Decimal) -> str:
+        return format(value, "f")
 
     def execute_order(self, request: OrderRequest) -> ExecutionResult:
         raise AutomationError("real MT5 execution is not enabled; final controls are blocked")

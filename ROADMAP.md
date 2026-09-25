@@ -20,7 +20,7 @@
 - [x] Implement local JSON file provider.
 - [ ] Add localhost authenticated HTTP provider.
 - [ ] Add WebSocket, named-pipe, and MT5 bridge providers.
-- [ ] Add durable idempotency storage.
+- [x] Add durable idempotency storage.
 
 ## Phase 3 — MT5 Discovery
 
@@ -33,8 +33,8 @@
 
 - [x] Inspect the demo terminal accessibility/UI Automation tree.
 - [x] Implement terminal/window manager.
-- [ ] Implement semantic symbol selection.
-- [ ] Implement volume and SL/TP preparation.
+- [x] Implement semantic symbol selection.
+- [x] Implement volume and SL/TP preparation.
 - [ ] Implement guarded BUY/SELL action.
 - [ ] Implement rejection and timeout detection.
 
@@ -45,8 +45,9 @@
 - [x] Symbol whitelist and volume limit.
 - [x] Expiration, duplicate, and rate protection.
 - [x] Demo-only policy in the workflow.
-- [ ] Persist unknown execution state across restarts.
-- [ ] Verify independent position/order changes.
+- [x] Persist signal attempts and unknown execution state across restarts.
+- [x] Implement independent position-change verification logic.
+- [ ] Connect verification logic to a real MT5 position snapshot provider.
 
 ## Phase 6 — Desktop UI
 
