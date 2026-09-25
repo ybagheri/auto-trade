@@ -8,7 +8,13 @@ from typing import Any
 
 from ...domain.enums import AccountType
 from ...domain.exceptions import AutomationError
-from ...domain.models import AccountSnapshot, ExecutionResult, OrderRequest, TerminalProfile
+from ...domain.models import (
+    AccountSnapshot,
+    ExecutionResult,
+    OrderRequest,
+    PositionSnapshot,
+    TerminalProfile,
+)
 from ..terminal.discovery import WindowsTerminalDiscovery
 
 
@@ -34,6 +40,12 @@ class MT5WindowManager:
         normalized = title.lower()
         words = [word for word in re.split(r"[^a-z0-9]+", profile.instance_name.lower()) if word]
         return "terminal64" not in normalized and all(word in normalized for word in words)
+
+    @property
+    def root(self) -> Any:
+        if self._window is None:
+            raise AutomationError("MT5 window is not connected")
+        return self._window
 
     @property
     def title(self) -> str:
@@ -154,6 +166,9 @@ class MT5DesktopAdapter:
     ) -> None:
         self.profile = profile
         self.window_manager = window_manager or MT5WindowManager()
+        from .positions import MT5PositionSnapshotProvider
+
+        self.position_provider = MT5PositionSnapshotProvider(self.window_manager)
         self.connected = False
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
@@ -200,6 +215,11 @@ class MT5DesktopAdapter:
     @staticmethod
     def _format_decimal(value: Decimal) -> str:
         return format(value, "f")
+
+    def capture_positions(self) -> tuple[PositionSnapshot, ...]:
+        if not self.connected:
+            raise AutomationError("MT5 terminal is not connected")
+        return self.position_provider.positions()
 
     def execute_order(self, request: OrderRequest) -> ExecutionResult:
         raise AutomationError("real MT5 execution is not enabled; final controls are blocked")

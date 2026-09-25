@@ -7,6 +7,8 @@ from uuid import uuid4
 from ..domain.enums import AccountType, ExecutionState, ExecutionStatus
 from ..domain.exceptions import (
     AutomationError,
+    AutomationRejectedError,
+    AutomationTimeoutError,
     ExecutionUnknownError,
     SafetyViolation,
     TerminalNotFoundError,
@@ -159,6 +161,32 @@ class ExecutionWorkflow:
                 signal,
                 ExecutionStatus.REJECTED,
                 ExecutionState.TERMINAL_NOT_FOUND,
+                str(exc),
+            )
+        except AutomationTimeoutError as exc:
+            if machine.state in {
+                ExecutionState.PREPARING_UI,
+                ExecutionState.EXECUTING,
+            }:
+                machine.transition(ExecutionState.TIMEOUT)
+            return self._result(
+                execution_id,
+                signal,
+                ExecutionStatus.REJECTED,
+                ExecutionState.TIMEOUT,
+                str(exc),
+            )
+        except AutomationRejectedError as exc:
+            if machine.state in {
+                ExecutionState.PREPARING_UI,
+                ExecutionState.EXECUTING,
+            }:
+                machine.transition(ExecutionState.ORDER_REJECTED)
+            return self._result(
+                execution_id,
+                signal,
+                ExecutionStatus.REJECTED,
+                ExecutionState.ORDER_REJECTED,
                 str(exc),
             )
         except AutomationError as exc:

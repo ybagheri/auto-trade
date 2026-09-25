@@ -24,6 +24,8 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("status", help="show configured safety status")
     subparsers.add_parser("diagnostics", help="show environment and MT5 diagnostics")
+    subparsers.add_parser("recovery", help="review pending and unknown execution records")
+    subparsers.add_parser("position-snapshot", help="read MT5 positions for verification")
     commands = (
         ("test-signal", "parse one signal file"),
         ("dry-run", "process one signal without order execution"),
@@ -75,6 +77,40 @@ def main(argv: list[str] | None = None) -> int:
     config = AppConfig.from_env()
     if args.command in {"status", "diagnostics"}:
         print(json.dumps(_diagnostics(config), indent=2, default=str))
+        return 0
+    if args.command == "position-snapshot":
+        adapter = MT5DesktopAdapter(config.terminal_profile())
+        try:
+            adapter.connect()
+            positions = adapter.capture_positions()
+        except AutoTradeError as exc:
+            print(json.dumps({"status": "UNAVAILABLE", "error": str(exc)}, indent=2))
+            return 1
+        print(
+            json.dumps(
+                {
+                    "status": "AVAILABLE",
+                    "positions": [
+                        {
+                            "position_id": position.position_id,
+                            "symbol": position.symbol,
+                            "side": position.side,
+                            "volume": str(position.volume),
+                        }
+                        for position in positions
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if args.command == "recovery":
+        records = JsonExecutionLedger(config.log_directory / "idempotency.json").records()
+        review = {
+            "pending": [record for record in records if record.get("status") == "REQUESTED"],
+            "unknown": [record for record in records if record.get("status") == "UNKNOWN"],
+        }
+        print(json.dumps(review, indent=2, default=str))
         return 0
     if args.command == "run":
         print("run is not enabled until a verified MT5 desktop adapter is implemented")

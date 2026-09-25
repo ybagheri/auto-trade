@@ -1,9 +1,12 @@
 from .enums import AccountType, ConfirmationPolicy, ExecutionState, ExecutionStatus, OrderAction
 from .exceptions import (
     AutomationError,
+    AutomationRejectedError,
+    AutomationTimeoutError,
     AutoTradeError,
     ExecutionUnknownError,
     InvalidSignalError,
+    PositionSnapshotUnavailable,
     SafetyViolation,
     TerminalNotFoundError,
 )
@@ -26,6 +29,8 @@ __all__ = [
     "AuditEvent",
     "AutoTradeError",
     "AutomationError",
+    "AutomationRejectedError",
+    "AutomationTimeoutError",
     "ConfirmationPolicy",
     "ExecutionResult",
     "ExecutionState",
@@ -35,6 +40,7 @@ __all__ = [
     "OrderAction",
     "OrderRequest",
     "PositionSnapshot",
+    "PositionSnapshotUnavailable",
     "RiskLimits",
     "SafetyViolation",
     "SymbolInfo",

@@ -19,7 +19,7 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Execution state machine with logged transitions.
 - Windows MT5 process discovery using configured executable path and data directory.
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
-- Position-change verification abstraction and durable JSON execution ledger for restart-safe idempotency.
+- Position-change verification abstraction, fail-closed MT5 Trade-table provider, and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - CLI diagnostics and non-executing dry-run processing.
 - Mocked unit and integration tests that do not require MT5.
@@ -86,6 +86,8 @@ python -m pip install -e ".[dev,windows]"
 python -m auto_trade diagnostics
 python -m auto_trade test-signal examples\signals\example.json
 python -m auto_trade dry-run --mock examples\signals\example.json
+python -m auto_trade position-snapshot
+python -m auto_trade recovery
 ```
 
 The example is historical and may be rejected as expired. Create a signal with a current UTC timestamp for a dry-run test.
@@ -128,12 +130,13 @@ mypy src tests
 
 Current automated status:
 
-- **PASS — mocked:** 23 unit and integration tests executed.
+- **PASS — mocked:** 27 unit and integration tests executed.
 - **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, responsive demo window, and active `XAUUSD` chart title.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs completed without a final execution control; CI mock dry-run also passed.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **PASS — semantic preparation:** real-terminal dry-runs opened the UIA order dialog, set Symbol/Volume/optional fields, and closed it without final execution.
-- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, order rejection handling, and independent broker-position verification.
+- **BLOCKED — live position snapshot:** MT5 exposes the Trade table but not row values through UIA; the provider fails closed rather than guessing.
+- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, broker rejection handling, and an independent position observation method.
 
 ## Documentation
 
@@ -151,7 +154,7 @@ Current automated status:
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). The next milestones are real position snapshot verification, durable recovery review, controlled demo rejection tests, and only then a guarded live execution path.
+See [ROADMAP.md](ROADMAP.md). The next milestones are a reliable independent position observation method, controlled demo rejection tests, and only then a guarded live execution path.
 
 ## Contributing
 

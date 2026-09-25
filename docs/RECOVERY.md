@@ -11,3 +11,5 @@ The application writes `logs/idempotency.json` as a durable execution ledger. Ea
 - A corrupt or unreadable ledger fails closed with `UNKNOWN_EXECUTION`.
 
 The ledger is local operational data and is not a substitute for broker-side position verification. Operators must compare pending records with the MT5 demo account before clearing or resolving them. No automatic recovery action is currently provided.
+
+Use `python -m auto_trade recovery` to review pending and unknown records. The command is read-only.

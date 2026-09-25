@@ -17,6 +17,8 @@ class ExecutionLedger(Protocol):
 
     def record_result(self, result: ExecutionResult) -> None: ...
 
+    def records(self) -> tuple[dict[str, Any], ...]: ...
+
 
 class JsonExecutionLedger:
     def __init__(self, path: Path) -> None:
@@ -54,6 +56,10 @@ class JsonExecutionLedger:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
             self._write()
+
+    def records(self) -> tuple[dict[str, Any], ...]:
+        with self._lock:
+            return tuple(dict(entry) for entry in self._entries.values())
 
     def pending(self) -> tuple[dict[str, Any], ...]:
         with self._lock:

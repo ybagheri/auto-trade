@@ -36,7 +36,8 @@
 - [x] Implement semantic symbol selection.
 - [x] Implement volume and SL/TP preparation.
 - [ ] Implement guarded BUY/SELL action.
-- [ ] Implement rejection and timeout detection.
+- [x] Implement rejection and timeout classification.
+- [ ] Validate rejection and timeout classification against controlled MT5 states.
 
 ## Phase 5 — Safety and Verification
 
@@ -47,7 +48,8 @@
 - [x] Demo-only policy in the workflow.
 - [x] Persist signal attempts and unknown execution state across restarts.
 - [x] Implement independent position-change verification logic.
-- [ ] Connect verification logic to a real MT5 position snapshot provider.
+- [x] Connect verification logic to a fail-closed MT5 position snapshot provider.
+- [ ] Expose reliable position values through UIA or an approved observation API.
 
 ## Phase 6 — Desktop UI
 

@@ -4,7 +4,7 @@ The development fixture is the Alpari terminal at `C:\Program Files\Alpari MT5_2
 
 ## Current status
 
-The project has verified executable existence, data-directory existence, process path matching, process responsiveness, a visible demo-account window title, and UIA discovery of `New Order`, `Trade`, and the active `XAUUSD,M5` chart title. The real adapter opens the semantic order dialog, sets Symbol/Volume/SL/TP/Comment by Automation ID, and closes it during dry-run. Final execution controls and broker-result verification remain blocked.
+The project has verified executable existence, data-directory existence, process path matching, process responsiveness, a visible demo-account window title, and UIA discovery of `New Order`, `Trade`, and the active `XAUUSD,M5` chart title. The real adapter opens the semantic order dialog, sets Symbol/Volume/SL/TP/Comment by Automation ID, and closes it during dry-run. The Trade position table is detected by Automation ID `10328`, but row values are not exposed through UIA on this build, so verification fails closed. Final execution controls remain blocked.
 
 ## Required future adapter behavior
 

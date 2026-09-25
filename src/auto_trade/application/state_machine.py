@@ -23,6 +23,8 @@ _TRANSITIONS: dict[ExecutionState, frozenset[ExecutionState]] = {
             ExecutionState.SYMBOL_NOT_FOUND,
             ExecutionState.UI_ELEMENT_NOT_FOUND,
             ExecutionState.TERMINAL_NOT_FOUND,
+            ExecutionState.TIMEOUT,
+            ExecutionState.ORDER_REJECTED,
             ExecutionState.UNKNOWN_EXECUTION,
         }
     ),

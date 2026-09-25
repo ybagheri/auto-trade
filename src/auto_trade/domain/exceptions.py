@@ -21,5 +21,17 @@ class AutomationError(AutoTradeError):
     """Raised when the desktop automation adapter cannot complete an action."""
 
 
+class AutomationTimeoutError(AutomationError):
+    """Raised when a bounded UI operation times out."""
+
+
+class AutomationRejectedError(AutomationError):
+    """Raised when MT5 explicitly rejects an order."""
+
+
+class PositionSnapshotUnavailable(AutomationError):
+    """Raised when position state cannot be read reliably."""
+
+
 class ExecutionUnknownError(AutoTradeError):
     """Raised when execution cannot be proven or disproven."""
