@@ -1,0 +1,21 @@
+mt5:
+  terminal_path: "C:\\Program Files\\Alpari MT5_2\\terminal64.exe"
+  data_path: "C:\\Users\\BazikadeStore\\AppData\\Roaming\\MetaQuotes\\Terminal\\AF19ECCF568F855DF9D3196BBF8BF315"
+  instance_name: "Alpari Demo"
+
+execution:
+  dry_run: true
+  demo_only: true
+  confirmation: SINGLE_CONFIRMATION
+
+risk:
+  allowed_symbols:
+    - EURUSD
+    - XAUUSD
+    - YM
+  max_volume: 1.0
+  max_orders_per_minute: 5
+  expiration_seconds: 10
+
+signals:
+  directory: "signals"
