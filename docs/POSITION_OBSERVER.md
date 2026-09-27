@@ -37,13 +37,18 @@ verification is not circular.
 .\scripts\install-observer.ps1 -DataPath "<terminal data dir>"
 ```
 
-This copies the source into `<data dir>\MQL5\Services` and compiles it with
-`MetaEditor64.exe`. The script fails if compilation does not produce an `.ex5`.
+This copies the source into `<data dir>\MQL5\Experts` and compiles it with
+`MetaEditor64.exe`. The script fails if compilation does not produce an `.ex5`, and
+it removes any earlier copy from `MQL5\Services` together with `config\services.ini`
+so MT5 cannot see two programs with the same name.
 
-## Start it: attach it to a chart
+## Attach it to a chart
 
-In the terminal: **Navigator → Services → AutoTradePositionObserver → right click →
-Attach to Chart**, then confirm with `OK` in the dialog that appears.
+In the terminal: **Navigator → Expert Advisors → AutoTradePositionObserver**, then
+drag it onto a chart or right click → **Attach to Chart**, and confirm with `OK`.
+
+If the chart already shows the program name there is nothing to do. MT5 restores the
+attachment when the terminal reopens, so this is normally a one-time step.
 
 ### Why a chart, and not `Add Service`
 
@@ -58,23 +63,20 @@ worth recording so it is not retried blindly.
   `service 'AutoTradePositionObserver' stopped` about 10 ms later. `OnInit` never
   runs and no snapshot is produced.
 - Without the property, MetaEditor compiles a clean Expert Advisor
-  (`0 errors, 0 warnings`) and the Navigator offers `Attach to Chart`. Attaching
-  it runs `OnInit`, `EventSetTimer` succeeds, and snapshots appear within a
-  second.
+  (`0 errors, 0 warnings`) and attaching it runs `OnInit`, `EventSetTimer`
+  succeeds, and snapshots appear within a second.
 
-So the observer is shipped as an Expert Advisor that lives in the `Services`
-folder and is attached to a chart. Do not add `#property service` back: it turns
-the program into a script, which is the configuration that fails to initialise.
+So the observer is an Expert Advisor and lives in `MQL5\Experts`. Do not add
+`#property service` back, and do not use `Add Service`.
 
 ### Consequences
 
-The observer only runs while the chart it is attached to is open, and it must be
-re-attached after a terminal restart. This is acceptable because the reader fails
-closed on staleness: a snapshot older than the limit is treated as
-`UNAVAILABLE`, never as "no positions". A stopped observer can therefore never be
-mistaken for an empty account.
+The observer only runs while it is attached to an open chart. This is acceptable
+because the reader fails closed on staleness: a snapshot older than the limit is
+treated as `UNAVAILABLE`, never as "no positions". A stopped observer therefore
+cannot be mistaken for an empty account.
 
-Leave the chart open on a quiet symbol; the program only reads positions.
+Leave it attached to a quiet symbol; the program only reads positions.
 
 ## Snapshot format
 

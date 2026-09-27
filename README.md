@@ -87,10 +87,11 @@ the read-only observer and attach it to a chart:
 .\scripts\install-observer.ps1 -DataPath "<terminal data dir>"
 ```
 
-Then in the terminal: **Navigator → Services → AutoTradePositionObserver → right
-click → Attach to Chart**, then `OK`. The program contains no order calls of any
-kind. Use `Attach to Chart`, not `Add Service`: the service path does not
-initialise on this terminal build. See [position observer](docs/POSITION_OBSERVER.md).
+Then in the terminal: **Navigator → Expert Advisors → AutoTradePositionObserver**,
+then drag it onto a chart or right click → **Attach to Chart**, and confirm with
+`OK`. The program contains no order calls of any kind. It is an Expert Advisor, not
+an MQL5 Service: the service path does not initialise on this terminal build. See
+[position observer](docs/POSITION_OBSERVER.md).
 
 ## Quick Start
 
