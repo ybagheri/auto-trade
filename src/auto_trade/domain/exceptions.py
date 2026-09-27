@@ -9,6 +9,10 @@ class InvalidSignalError(AutoTradeError):
     """Raised when a signal cannot be parsed or normalized."""
 
 
+class NoSignalAvailable(AutoTradeError):
+    """Raised when a provider has no signal ready to deliver."""
+
+
 class SafetyViolation(AutoTradeError):
     """Raised when an execution safety gate rejects a request."""
 
