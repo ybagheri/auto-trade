@@ -147,10 +147,23 @@ The complete schema is in [SIGNAL_PROTOCOL.md](docs/SIGNAL_PROTOCOL.md).
 ## Development
 
 ```powershell
-python -m pytest -q
-ruff check .
-mypy src tests
+.\scripts\test.ps1
 ```
+
+That runs `pytest`, `ruff`, and `mypy src tests`, and stops on the first failure.
+To run them individually, put `typestubs` on `MYPYPATH` first:
+
+```powershell
+$env:MYPYPATH = ".\typestubs"
+python -m pytest -q
+python -m ruff check .
+python -m mypy src tests
+```
+
+`typestubs/numpy` exists only to shadow numpy's bundled stubs, which require
+Python 3.12 syntax while this project type-checks at 3.11. numpy is never
+imported here; without the shadow, `mypy` fails on any machine that happens to
+have numpy installed for unrelated reasons.
 
 ## Testing
 
