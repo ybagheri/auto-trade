@@ -215,6 +215,7 @@ Current automated status:
 - [Dashboard](docs/DASHBOARD.md)
 - [Strategy integration](docs/STRATEGY_INTEGRATION.md)
 - [Execution](docs/EXECUTION.md)
+- [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
 - [Recovery](docs/RECOVERY.md)
 - [Persian documentation](README.fa.md)
 
