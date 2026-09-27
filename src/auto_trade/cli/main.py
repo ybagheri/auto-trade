@@ -4,6 +4,8 @@ import argparse
 import json
 import platform
 import sys
+from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from ..adapters.terminal import DryRunTerminalAdapter
@@ -11,8 +13,7 @@ from ..application.ledger import JsonExecutionLedger
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError
-from ..domain.models import TradeSignal
-from ..domain.protocols import KillSwitch
+from ..domain.models import TradeSignal, utc_now
 from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
 from ..infrastructure.logging import AuditLogger
@@ -39,7 +40,30 @@ def _parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="use the fake terminal instead of inspecting MT5",
             )
+    make_signal = subparsers.add_parser(
+        "make-signal", help="write a signal file with a current timestamp"
+    )
+    make_signal.add_argument("--symbol", required=True)
+    make_signal.add_argument("--action", default="BUY")
+    make_signal.add_argument("--volume", type=Decimal, default=Decimal("0.01"))
+    make_signal.add_argument("--valid-seconds", type=int, default=300)
+    make_signal.add_argument("--comment", default="")
+    make_signal.add_argument(
+        "--output",
+        type=Path,
+        default=Path("examples") / "signals" / "example.json",
+    )
     subparsers.add_parser("run", help="run the configured signal loop")
+    dashboard = subparsers.add_parser(
+        "dashboard", help="serve the local read-only status dashboard"
+    )
+    dashboard.add_argument("--host", default="127.0.0.1")
+    dashboard.add_argument("--port", type=int, default=8765)
+    dashboard.add_argument(
+        "--token",
+        default=None,
+        help="control token; generated when omitted",
+    )
     return parser
 
 
@@ -70,6 +94,34 @@ def _diagnostics(config: AppConfig) -> dict[str, object]:
         "allowed_symbols": sorted(config.risk.allowed_symbols),
         "max_volume": str(config.risk.max_volume),
     }
+
+
+def _dashboard(config: AppConfig, args: argparse.Namespace) -> int:
+    from ..application.kill_switch import FileKillSwitch
+    from ..interfaces import StatusReporter, build_server, kill_switch_path
+
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    reporter = StatusReporter(
+        config=config,
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+        kill_switch=kill_switch,
+    )
+    try:
+        server = build_server(args.host, args.port, reporter, kill_switch, args.token)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"auto-trade dashboard on {server.url}")
+    print(f"control token: {server.token}")
+    print("The dashboard can activate the kill switch; keep this token private.")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        server.server_close()
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,6 +164,32 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(review, indent=2, default=str))
         return 0
+    if args.command == "make-signal":
+        now = utc_now()
+        try:
+            signal = TradeSignal.from_dict(
+                {
+                    "id": f"manual-{now.strftime('%Y%m%dT%H%M%SZ')}",
+                    "timestamp": now.isoformat().replace("+00:00", "Z"),
+                    "expiration": (now + timedelta(seconds=args.valid_seconds))
+                    .isoformat()
+                    .replace("+00:00", "Z"),
+                    "source": "manual-cli",
+                    "symbol": args.symbol,
+                    "action": args.action,
+                    "volume": str(args.volume),
+                    "comment": args.comment,
+                }
+            )
+        except (InvalidOperation, AutoTradeError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(signal.to_dict(), indent=2), encoding="utf-8")
+        print(json.dumps({"written": str(args.output), "signal": signal.to_dict()}, indent=2))
+        return 0
+    if args.command == "dashboard":
+        return _dashboard(config, args)
     if args.command == "run":
         print("run is not enabled until a verified MT5 desktop adapter is implemented")
         return 2
@@ -126,6 +204,12 @@ def main(argv: list[str] | None = None) -> int:
             demo_only=config.policy.demo_only,
             confirmation=config.policy.confirmation,
         )
+        from ..application.kill_switch import FileKillSwitch
+        from ..interfaces import kill_switch_path
+
+        # File backed so an emergency stop raised by the dashboard, another
+        # process, or a previous run still blocks execution after a restart.
+        kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
         terminal = (
             DryRunTerminalAdapter()
             if args.mock
@@ -136,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
             risk_engine=RiskEngine(config.risk),
             profile=config.terminal_profile(),
             policy=policy,
-            kill_switch=KillSwitch(),
+            kill_switch=kill_switch,
             audit=audit.record,
             ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
         )

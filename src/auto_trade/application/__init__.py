@@ -1,3 +1,4 @@
+from .kill_switch import FileKillSwitch
 from .ledger import ExecutionLedger, JsonExecutionLedger
 from .risk import RiskEngine
 from .state_machine import ExecutionStateMachine
@@ -8,6 +9,7 @@ __all__ = [
     "ExecutionLedger",
     "ExecutionStateMachine",
     "ExecutionWorkflow",
+    "FileKillSwitch",
     "JsonExecutionLedger",
     "PositionChangeVerifier",
     "RiskEngine",
