@@ -19,8 +19,9 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Execution state machine with logged transitions.
 - Windows MT5 process discovery using configured executable path and data directory.
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
-- Position-change verification abstraction, fail-closed MT5 Trade-table provider, and durable JSON execution ledger for restart-safe idempotency.
+- Position-change verification abstraction, a fail-closed snapshot provider backed by a read-only MT5 observer service, and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
+- Local read-only status dashboard with a durable, token-guarded emergency stop.
 - CLI diagnostics and non-executing dry-run processing.
 - Mocked unit and integration tests that do not require MT5.
 
@@ -37,7 +38,7 @@ flowchart LR
     Verify --> Audit[Audit Log]
 ```
 
-The MT5 desktop adapter can inspect the configured demo process/window and validate the active chart symbol, but final execution controls and verification are intentionally blocked. The `--mock` dry-run path remains available for CI without MT5.
+The MT5 desktop adapter can inspect the configured demo process/window and validate the active chart symbol, but final execution controls are intentionally blocked. `--mock` remains available for CI without MT5.
 
 ## How It Works
 
@@ -58,19 +59,16 @@ Planned: authenticated localhost HTTP, WebSocket, named pipes, MT5 bridge, and o
 
 ## MT5 Integration
 
-The configured development terminal is:
+The terminal and data directory are machine specific and are configured through
+environment variables or a local `.env` file. Copy `.env.example` to `.env` and
+point `AUTO_TRADE_TERMINAL_PATH`, `AUTO_TRADE_DATA_PATH` and
+`AUTO_TRADE_INSTANCE_NAME` at the demo terminal you intend to use.
 
-```text
-C:\Program Files\Alpari MT5_2\terminal64.exe
-```
-
-The configured data directory is:
-
-```text
-C:\Users\BazikadeStore\AppData\Roaming\MetaQuotes\Terminal\AF19ECCF568F855DF9D3196BBF8BF315
-```
-
-Only the specified demo terminal should be used for development testing. See [MT5 integration](docs/MT5_INTEGRATION.md) and [safety](docs/SAFETY.md).
+`AUTO_TRADE_INSTANCE_NAME` is matched against the window title and fails closed
+when it matches nothing, so an ambiguous or unintended terminal is never driven.
+Only the specified demo terminal should be used for development testing. See
+[MT5 integration](docs/MT5_INTEGRATION.md), [position observer](docs/POSITION_OBSERVER.md)
+and [safety](docs/SAFETY.md).
 
 ## Installation
 
@@ -80,17 +78,45 @@ py -3.12 -m venv .venv
 python -m pip install -e ".[dev,windows]"
 ```
 
+## Position Observer
+
+Live execution verification needs an independent read of open positions. Install
+the read-only observer and attach it to a chart:
+
+```powershell
+.\scripts\install-observer.ps1 -DataPath "<terminal data dir>"
+```
+
+Then in the terminal: **Navigator → Services → AutoTradePositionObserver → right
+click → Attach to Chart**, then `OK`. The program contains no order calls of any
+kind. Use `Attach to Chart`, not `Add Service`: the service path does not
+initialise on this terminal build. See [position observer](docs/POSITION_OBSERVER.md).
+
 ## Quick Start
 
 ```powershell
 python -m auto_trade diagnostics
+python -m auto_trade make-signal --symbol BITCOIN --action BUY --volume 0.01
 python -m auto_trade test-signal examples\signals\example.json
 python -m auto_trade dry-run --mock examples\signals\example.json
+python -m auto_trade dry-run examples\signals\example.json
 python -m auto_trade position-snapshot
 python -m auto_trade recovery
+python -m auto_trade dashboard
 ```
 
-The example is historical and may be rejected as expired. Create a signal with a current UTC timestamp for a dry-run test.
+A signal expires at `timestamp + expiration_seconds` unless it carries an explicit
+`expiration`, so generate one with `make-signal` rather than editing the example by
+hand. `make-signal` also writes the file that the other commands read.
+
+## Dashboard
+
+`python -m auto_trade dashboard` serves a local read-only status page with signal,
+execution, risk, position, and log views, plus an emergency stop. It binds
+loopback only and refuses any other address, and its mutating endpoints require the
+printed control token. It has no endpoint that can place an order. The stop is
+written to a file, so it applies to other processes and survives a restart. See
+[dashboard](docs/DASHBOARD.md).
 
 ## Demo Mode
 
@@ -130,13 +156,16 @@ mypy src tests
 
 Current automated status:
 
-- **PASS — mocked:** 27 unit and integration tests executed.
-- **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, responsive demo window, and active `XAUUSD` chart title.
-- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs completed without a final execution control; CI mock dry-run also passed.
+- **PASS — mocked:** 106 unit and integration tests executed.
+- **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, and a unique responsive demo window matching `AUTO_TRADE_INSTANCE_NAME`.
+- **PASS — controlled dry-run:** a real-terminal BITCOIN BUY dry-run completed the full state machine to `DRY_RUN_COMPLETED` without a final execution control; the CI mock dry-run also passed.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
-- **PASS — semantic preparation:** real-terminal dry-runs opened the UIA order dialog, set Symbol/Volume/optional fields, and closed it without final execution.
-- **BLOCKED — live position snapshot:** MT5 exposes the Trade table but not row values through UIA; the provider fails closed rather than guessing.
-- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, broker rejection handling, and an independent position observation method.
+- **PASS — semantic preparation:** the real-terminal dry-run opened the semantic order dialog, set Symbol/Volume, and closed it without final execution.
+- **MEASURED — UI position reading is not possible:** Trade-grid cell text is empty through UI Automation, Win32 `LVM_GETITEMTEXT`, and MSAA. The grid is owner-drawn.
+- **PASS — observer snapshot:** the read-only observer is attached and running; `position-snapshot` and `/api/positions` both return `AVAILABLE` with an empty position list, and the sequence advances once per second.
+- **MANUAL TEST REQUIRED:** open a demo position by hand and confirm the snapshot reports it.
+- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
+- **PASS — dashboard:** loopback-only server with token-guarded mutations, verified live against this terminal; a stop raised over HTTP blocked a `dry-run` in a separate process.
 
 ## Documentation
 
@@ -149,6 +178,8 @@ Current automated status:
 - [Compliance](docs/COMPLIANCE.md)
 - [Testing](docs/TESTING.md)
 - [Verification](docs/VERIFICATION.md)
+- [Position observer](docs/POSITION_OBSERVER.md)
+- [Dashboard](docs/DASHBOARD.md)
 - [Recovery](docs/RECOVERY.md)
 - [Persian documentation](README.fa.md)
 

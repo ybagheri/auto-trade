@@ -42,6 +42,7 @@
 ## Phase 5 — Safety and Verification
 
 - [x] Kill switch.
+- [x] File-backed kill switch shared across processes and restarts.
 - [x] Dry-run mode.
 - [x] Symbol whitelist and volume limit.
 - [x] Expiration, duplicate, and rate protection.
@@ -49,13 +50,13 @@
 - [x] Persist signal attempts and unknown execution state across restarts.
 - [x] Implement independent position-change verification logic.
 - [x] Connect verification logic to a fail-closed MT5 position snapshot provider.
-- [ ] Expose reliable position values through UIA or an approved observation API.
+- [x] Expose reliable position values through UIA or an approved observation API.
 
 ## Phase 6 — Desktop UI
 
-- [ ] Build status dashboard.
-- [ ] Add signal, execution, risk, and log views.
-- [ ] Add emergency stop and default-dry-run test controls.
+- [x] Build status dashboard.
+- [x] Add signal, execution, risk, and log views.
+- [x] Add emergency stop and default-dry-run test controls.
 
 ## Phase 7 — External Integration
 
@@ -67,8 +68,10 @@
 
 - [x] Unit tests for parsing, risk, state, idempotency, and provider behavior.
 - [x] Provider-to-workflow integration test.
-- [ ] Add controlled UI tests.
+- [x] Add controlled UI tests.
 - [x] Perform demo connection, window, symbol, and dry-run checks.
+- [x] Attach the position observer and confirm a live snapshot is read.
+- [ ] Observe a demo position opened by hand and confirm verification accepts it.
 - [ ] Perform actual demo order only after explicit verification criteria pass.
 
 ## Phase 9 — Packaging
