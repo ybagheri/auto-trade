@@ -119,6 +119,7 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
     the signal file, and the audit record.
     """
     from ..application.strategy import build_context, load_strategy
+    from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
 
     spec = args.strategy or config.strategy_spec
     if not spec:
@@ -135,7 +136,16 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
         return 1
 
     positions: tuple[PositionSnapshot, ...] = ()
-    position_note = "position observation unavailable on this MT5 build"
+    position_note = "position observation unavailable"
+    try:
+        provider = MT5FilePositionSnapshotProvider(
+            config.data_path / "MQL5" / "Files"
+        )
+        snapshot = provider.snapshot()
+        positions = snapshot.positions
+        position_note = snapshot.reference
+    except AutoTradeError as exc:
+        print(f"WARNING: {exc}", file=sys.stderr)
 
     context = build_context(args.symbol, positions)
     try:

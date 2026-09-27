@@ -10,7 +10,15 @@ Verification is independent of the UI action that initiated an order. A button c
 
 ## Live execution consequence
 
-The UI-only build has no independent position observation method. `MT5DesktopAdapter` refuses a final control when it cannot capture a baseline, and verification returns `UNKNOWN` when the post-action state cannot be read. The project does not use an MQL5 program or `OrderSend`, but it also does not claim broker acceptance without evidence.
+`MT5FilePositionSnapshotProvider` reads the JSON snapshot published by the read-only
+`AutoTradePositionReader` indicator. The indicator performs no trade operation, so
+its snapshot reflects terminal state independently of the desktop request path.
+It is not a service and contains no `OrderSend` or trade request call.
+
+The provider fails closed on a missing, unreadable, truncated, unknown-schema,
+incomplete, or stale snapshot. `MT5DesktopAdapter` captures a baseline at the end
+of `prepare_order`, and only exactly one new matching position yields `ACCEPTED`.
+Every provider failure yields `UNKNOWN`.
 
 A future independent observation method must be explicit, read-only, and approved by the operator. It must not be implemented as an order-placing program.
 

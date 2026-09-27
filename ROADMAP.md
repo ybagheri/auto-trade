@@ -50,8 +50,8 @@
 - [x] Demo-only policy in the workflow.
 - [x] Persist signal attempts and unknown execution state across restarts.
 - [x] Implement independent position-change verification logic.
-- [x] Keep position observation fail-closed when the MT5 UI cannot expose values.
-- [ ] Provide an approved, non-OrderSend position observation method.
+- [x] Implement a read-only MQL5 indicator for position observation without `OrderSend`.
+- [ ] Confirm the indicator snapshot on the demo terminal.
 
 ## Phase 6 — Desktop UI
 
@@ -72,7 +72,7 @@
 - [x] Provider-to-workflow integration test.
 - [x] Add controlled UI tests.
 - [x] Perform demo connection, window, symbol, and dry-run checks.
-- [ ] Provide a position observation method that works without an MQL5 program.
+- [x] Provide a read-only MQL5 indicator position observation method.
 - [ ] Observe a demo position opened by hand and confirm verification accepts it.
 - [ ] Perform actual demo order only after explicit verification criteria pass.
 

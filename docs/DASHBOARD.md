@@ -71,10 +71,10 @@ looking successful to a scheduler.
 
 ## Position data
 
-Position values are not available through the MT5 Trade grid on this build. The
-endpoint returns `UNAVAILABLE` with the reason instead of an empty list, so
-“no positions” and “cannot see positions” stay distinguishable. The dashboard
-never opens or drives the MT5 window.
+Position values come from the read-only indicator snapshot, not from the owner-drawn
+MT5 Trade grid. The endpoint returns `UNAVAILABLE` with the reason when the
+snapshot is missing or stale, so “no positions” and “cannot see positions” stay
+distinguishable. The dashboard never opens or drives the MT5 window.
 
 ## Tests
 

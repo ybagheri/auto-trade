@@ -5,7 +5,9 @@ from typing import Any
 
 from ..application.kill_switch import FileKillSwitch
 from ..application.ledger import JsonExecutionLedger
+from ..domain.exceptions import AutoTradeError
 from ..domain.models import utc_now
+from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
 from ..infrastructure.configuration import AppConfig
 
 AUDIT_FILENAME = "audit.log"
@@ -62,10 +64,25 @@ class StatusReporter:
         }
 
     def positions(self) -> dict[str, Any]:
+        provider = MT5FilePositionSnapshotProvider(
+            self.config.data_path / "MQL5" / "Files"
+        )
+        try:
+            positions = provider.positions()
+        except AutoTradeError as exc:
+            return {"status": "UNAVAILABLE", "error": str(exc), "positions": []}
         return {
-            "status": "UNAVAILABLE",
-            "error": "MT5 Trade grid position values are not exposed through UI Automation",
-            "positions": [],
+            "status": "AVAILABLE",
+            "error": None,
+            "positions": [
+                {
+                    "position_id": position.position_id,
+                    "symbol": position.symbol,
+                    "side": position.side,
+                    "volume": str(position.volume),
+                }
+                for position in positions
+            ],
         }
 
     def executions(self) -> dict[str, Any]:

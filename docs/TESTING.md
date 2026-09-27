@@ -10,12 +10,12 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 136 unit and integration tests passed.
+- **PASS — mocked:** 140 unit and integration tests passed.
 - **PASS — environment:** MT5 executable, data directory, and demo process were found.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
-- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the UI reader fails closed.
+- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator path is required.
 - **NOT RUN — real order:** no real BUY/SELL click or broker order was attempted.
-- **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, broker rejection handling, and an approved non-OrderSend position observation method.
+- **MANUAL TEST REQUIRED:** attach `AutoTradePositionReader`, open a demo position, confirm the snapshot reports it, and then test broker rejection handling.
 
 ## Test layers
 

@@ -19,7 +19,7 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Execution state machine with logged transitions.
 - Windows MT5 process discovery using configured executable path and data directory.
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
-- Position-change verification abstraction with a fail-closed UI position reader and durable JSON execution ledger for restart-safe idempotency.
+- Position-change verification abstraction with a fail-closed read-only indicator snapshot provider and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - Local read-only status dashboard with a durable, token-guarded emergency stop.
 - CLI diagnostics and non-executing dry-run processing.
@@ -69,6 +69,18 @@ when it matches nothing, so an ambiguous or unintended terminal is never driven.
 Only the specified demo terminal should be used for development testing. See
 [MT5 integration](docs/MT5_INTEGRATION.md)
 and [safety](docs/SAFETY.md).
+
+## Read-only Position Indicator
+
+The independent observation path is a read-only MQL5 indicator, not a service and not an order sender:
+
+```powershell
+.\scripts\install-position-reader.ps1 `
+    -DataPath "<MT5 data directory>" `
+    -MetaEditor "C:\Program Files\Alpari MT5_2\MetaEditor64.exe"
+```
+
+Attach `AutoTradePositionReader` to a chart once. It reads positions and writes a local snapshot; it contains no `OrderSend`, trade request, or custom log. MT5 may still record indicator load/attachment in its own Journal. See [position reader](docs/POSITION_READER.md).
 
 ## Installation
 
@@ -176,10 +188,10 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 136 unit and integration tests executed.
+- **PASS — mocked:** 140 unit and integration tests executed.
 - **PASS — environment:** MT5 executable, data directory, and demo process were found.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
-- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the UI reader fails closed.
+- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator snapshot is required.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.
@@ -195,6 +207,7 @@ Current automated status:
 - [Compliance](docs/COMPLIANCE.md)
 - [Testing](docs/TESTING.md)
 - [Verification](docs/VERIFICATION.md)
+- [Position reader](docs/POSITION_READER.md)
 - [Dashboard](docs/DASHBOARD.md)
 - [Strategy integration](docs/STRATEGY_INTEGRATION.md)
 - [Execution](docs/EXECUTION.md)

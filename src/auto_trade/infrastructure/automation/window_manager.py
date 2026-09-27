@@ -4,6 +4,7 @@ import importlib
 import re
 import time
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from ...application.verification import PositionChangeVerifier
@@ -31,6 +32,7 @@ from .execution import (
     refused_result,
     wait_for_dialog_to_close,
 )
+from .positions_file import MT5FilePositionSnapshotProvider
 
 
 class MT5WindowManager:
@@ -185,9 +187,9 @@ class MT5DesktopAdapter:
         self.window_manager = window_manager or MT5WindowManager()
         self.gate = gate if gate is not None else ExecutionGate()
         if position_provider is None:
-            from .positions import MT5PositionSnapshotProvider
-
-            position_provider = MT5PositionSnapshotProvider(self.window_manager)
+            position_provider = MT5FilePositionSnapshotProvider(
+                Path(profile.data_path) / "MQL5" / "Files"
+            )
         self.position_provider = position_provider
         self.connected = False
         self.selected_symbol: str | None = None
