@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ...domain.enums import ConfirmationPolicy
 from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
+from .env_file import load_env_file
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class AppConfig:
 
     @classmethod
     def from_env(cls) -> AppConfig:
+        load_env_file()
         terminal_path = Path(
             os.getenv(
                 "AUTO_TRADE_TERMINAL_PATH",
