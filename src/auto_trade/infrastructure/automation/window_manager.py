@@ -4,7 +4,6 @@ import importlib
 import re
 import time
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 from ...application.verification import PositionChangeVerifier
@@ -21,7 +20,6 @@ from ...domain.models import (
     PositionSnapshot,
     TerminalProfile,
     VerificationEvidence,
-    utc_now,
 )
 from ..terminal.discovery import WindowsTerminalDiscovery
 from .execution import (
@@ -33,7 +31,6 @@ from .execution import (
     refused_result,
     wait_for_dialog_to_close,
 )
-from .positions_file import ObserverSnapshot
 
 
 class MT5WindowManager:
@@ -188,16 +185,14 @@ class MT5DesktopAdapter:
         self.window_manager = window_manager or MT5WindowManager()
         self.gate = gate if gate is not None else ExecutionGate()
         if position_provider is None:
-            from .positions_file import MT5FilePositionSnapshotProvider
+            from .positions import MT5PositionSnapshotProvider
 
-            position_provider = MT5FilePositionSnapshotProvider(
-                Path(profile.data_path) / "MQL5" / "Files"
-            )
+            position_provider = MT5PositionSnapshotProvider(self.window_manager)
         self.position_provider = position_provider
         self.connected = False
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
-        self._baseline: ObserverSnapshot | None = None
+        self._baseline: tuple[PositionSnapshot, ...] | None = None
         self._baseline_error: str | None = None
 
     def connect(self) -> AccountSnapshot:
@@ -248,7 +243,7 @@ class MT5DesktopAdapter:
         comparing against an empty account it did not actually observe.
         """
         try:
-            self._baseline = self.capture_snapshot()
+            self._baseline = self.capture_positions()
             self._baseline_error = None
         except PositionSnapshotUnavailable as exc:
             self._baseline = None
@@ -262,27 +257,6 @@ class MT5DesktopAdapter:
         if not self.connected:
             raise AutomationError("MT5 terminal is not connected")
         return self.position_provider.positions()
-
-    def capture_snapshot(self) -> Any:
-        """Read the observer snapshot including its reference metadata.
-
-        Falls back to a synthesised reference when the provider only exposes
-        positions, so a custom provider still yields traceable evidence.
-        """
-        if not self.connected:
-            raise AutomationError("MT5 terminal is not connected")
-        provider = self.position_provider
-        reader = getattr(provider, "snapshot", None)
-        if callable(reader):
-            return reader()
-        positions = provider.positions()
-        return ObserverSnapshot(
-            sequence=-1,
-            written_at=utc_now(),
-            account=None,
-            server=None,
-            positions=tuple(positions),
-        )
 
     def execute_order(self, request: OrderRequest) -> ExecutionResult:
         """Use the final execution control, only if every gate allows it.
@@ -332,15 +306,13 @@ class MT5DesktopAdapter:
             detail = self._baseline_error or "no position baseline was captured"
             return self._unknown(request, f"verification baseline unavailable: {detail}")
         try:
-            after = self.capture_snapshot()
+            after = self.capture_positions()
         except PositionSnapshotUnavailable as exc:
-            return self._unknown(request, f"position snapshot unavailable: {exc}")
-        outcome = PositionChangeVerifier().verify(
-            request, self._baseline.positions, after.positions
-        )
+            return self._unknown(request, f"position observation unavailable: {exc}")
+        outcome = PositionChangeVerifier().verify(request, self._baseline, after)
         evidence = VerificationEvidence(
-            baseline=self._baseline.reference,
-            observed=after.reference,
+            baseline=self._position_reference(self._baseline),
+            observed=self._position_reference(after),
             position_id=outcome.position_id,
         )
         if not outcome.verified:
@@ -354,6 +326,14 @@ class MT5DesktopAdapter:
             order_reference=outcome.position_id,
             evidence=evidence,
         )
+
+    @staticmethod
+    def _position_reference(positions: tuple[PositionSnapshot, ...]) -> str:
+        values = ",".join(
+            f"{position.position_id}:{position.symbol}:{position.side}:{position.volume}"
+            for position in positions
+        )
+        return f"ui positions={values or 'none'}"
 
     def _unknown(
         self,

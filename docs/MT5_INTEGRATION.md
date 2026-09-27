@@ -6,7 +6,7 @@ The terminal and data directory are configured per machine through environment v
 
 The project has verified executable existence, data-directory existence, process path matching, process responsiveness, and a unique visible demo-account window title. UIA discovery finds `New Order` and the Trade grid. The real adapter opens the semantic order dialog, sets Symbol/Volume/SL/TP/Comment by Automation ID, and closes it during dry-run. A real-terminal BITCOIN BUY dry-run completed the full state machine to `DRY_RUN_COMPLETED` without a final execution control. Final execution controls remain blocked.
 
-Position reading through the UI is not possible on this build. The Trade grid is owner-drawn: its column headers resolve through both UIA and Win32, but every row and subitem value is empty through UIA, `LVM_GETITEMTEXT`, and MSAA. Independent observation therefore uses the read-only observer service instead of the grid. See [POSITION_OBSERVER.md](POSITION_OBSERVER.md).
+Position reading through the UI is not possible on this build. The Trade grid is owner-drawn: its column headers resolve through both UIA and Win32, but every row and subitem value is empty through UIA, `LVM_GETITEMTEXT`, and MSAA. The application therefore reports verification as `UNAVAILABLE` and refuses a final control. No MQL5 program or `OrderSend` path is used.
 
 ## Required future adapter behavior
 

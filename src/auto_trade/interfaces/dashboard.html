@@ -81,7 +81,7 @@
   </section>
 
   <section class="wide">
-    <h2>Open positions (observer snapshot)</h2>
+    <h2>Open positions</h2>
     <table>
       <thead><tr><th>Ticket</th><th>Symbol</th><th>Side</th><th>Volume</th></tr></thead>
       <tbody id="positions"></tbody>
@@ -185,8 +185,8 @@ async function refresh() {
           `<td>${escapeHtml(p.side)}</td><td>${escapeHtml(p.volume)}</td></tr>`).join("")
       : `<tr><td colspan="4" class="muted">no open positions</td></tr>`;
     $("positions-note").textContent = positions.status === "AVAILABLE"
-      ? "read from the read-only observer service"
-      : "observer unavailable: " + positions.error;
+      ? "position values are available"
+      : "position observation unavailable: " + positions.error;
 
     $("signals").innerHTML = signals.count
       ? signals.signals.map((s) =>

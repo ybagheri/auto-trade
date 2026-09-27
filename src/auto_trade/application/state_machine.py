@@ -63,16 +63,16 @@ _TRANSITIONS: dict[ExecutionState, frozenset[ExecutionState]] = {
 
 
 class ExecutionStateMachine:
-    def __init__(self, observer: Callable[[ExecutionState], None] | None = None) -> None:
+    def __init__(self, listener: Callable[[ExecutionState], None] | None = None) -> None:
         self.state = ExecutionState.IDLE
-        self.observer = observer
+        self.listener = listener
 
     def transition(self, next_state: ExecutionState) -> None:
         if next_state not in _TRANSITIONS[self.state]:
             raise ValueError(f"invalid transition: {self.state.value} -> {next_state.value}")
         self.state = next_state
-        if self.observer is not None:
-            self.observer(next_state)
+        if self.listener is not None:
+            self.listener(next_state)
 
     def reset(self) -> None:
         if self.state not in _TRANSITIONS[ExecutionState.IDLE]:

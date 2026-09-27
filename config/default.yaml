@@ -1,7 +1,7 @@
 mt5:
   terminal_path: "C:\\Program Files\\Alpari MT5_2\\terminal64.exe"
   data_path: "C:\\Users\\BazikadeStore\\AppData\\Roaming\\MetaQuotes\\Terminal\\AF19ECCF568F855DF9D3196BBF8BF315"
-  instance_name: "Alpari Demo"
+  instance_name: "Alpari-MT5-Demo"
 
 execution:
   dry_run: true

@@ -111,7 +111,7 @@ def adapter_for(
     )
     adapter.connected = True
     if baseline:
-        adapter._baseline = object()  # type: ignore[assignment]
+        adapter._baseline = ()
     return adapter
 
 
@@ -180,12 +180,12 @@ def test_execution_is_refused_without_an_observed_baseline() -> None:
     button = buy_button()
     manager = FakeManager(fields(), [button])
     adapter = adapter_for(manager, OPEN_GATE, baseline=False)
-    adapter._baseline_error = "observer snapshot is stale"
+    adapter._baseline_error = "MT5 position observation is unavailable"
 
     result = adapter.execute_order(request())
 
     assert result.status is ExecutionStatus.REJECTED
-    assert "stale" in result.message
+    assert "unavailable" in result.message
     assert button.clicks == 0
 
 

@@ -158,12 +158,14 @@ def test_risk_endpoint_lists_whitelist(server: DashboardServer) -> None:
     assert json.loads(body)["allowed_symbols"] == ["BITCOIN"]
 
 
-def test_positions_endpoint_fails_closed_without_observer(server: DashboardServer) -> None:
+def test_positions_endpoint_fails_closed_without_ui_position_values(
+    server: DashboardServer,
+) -> None:
     _, body = request(server, "/api/positions")
     payload = json.loads(body)
     assert payload["status"] == "UNAVAILABLE"
     assert payload["positions"] == []
-    assert "observer" in payload["error"].lower()
+    assert "position" in payload["error"].lower()
 
 
 def test_unknown_route_is_not_found(server: DashboardServer) -> None:

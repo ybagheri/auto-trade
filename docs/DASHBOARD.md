@@ -62,7 +62,7 @@ looking successful to a scheduler.
 | GET | `/api/health` | liveness and kill switch state |
 | GET | `/api/status` | terminal paths, safety flags, counts |
 | GET | `/api/risk` | whitelist and risk limits |
-| GET | `/api/positions` | observer snapshot, or a reason it is unavailable |
+| GET | `/api/positions` | position observation status, or a reason it is unavailable |
 | GET | `/api/signals` | pending signal files |
 | GET | `/api/executions` | ledger records, newest first |
 | GET | `/api/logs?tail=N` | audit log tail, N capped at 5000 |
@@ -71,11 +71,10 @@ looking successful to a scheduler.
 
 ## Position data
 
-Positions come from the read-only observer service, not from the UI, so the
-dashboard performs a file read and never opens or drives the MT5 window. When the
-service is not running the endpoint returns `UNAVAILABLE` with the reason instead
-of an empty list, so "no positions" and "cannot see positions" stay
-distinguishable. See [POSITION_OBSERVER.md](POSITION_OBSERVER.md).
+Position values are not available through the MT5 Trade grid on this build. The
+endpoint returns `UNAVAILABLE` with the reason instead of an empty list, so
+“no positions” and “cannot see positions” stay distinguishable. The dashboard
+never opens or drives the MT5 window.
 
 ## Tests
 

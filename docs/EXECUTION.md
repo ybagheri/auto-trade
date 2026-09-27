@@ -74,9 +74,9 @@ can never reach a final control.
 Enabling this on a live account is outside what this project has been tested for.
 The supported target is a demo account, and the first run should be watched:
 
-1. Confirm the observer is attached and `position-snapshot` reports `AVAILABLE`.
+1. Confirm the terminal is the configured demo instance and that a position observation method is available; this UI-only build currently reports `UNAVAILABLE` and refuses execution.
 2. Confirm `AUTO_TRADE_MAX_VOLUME` is set deliberately.
 3. Use the smallest broker-allowed volume.
 4. Keep the kill switch one HTTP call away: `python -m auto_trade dashboard`.
 5. Watch the audit log. Every gate refusal and every verification outcome is
-   recorded with its snapshot evidence.
+   recorded with its evidence.

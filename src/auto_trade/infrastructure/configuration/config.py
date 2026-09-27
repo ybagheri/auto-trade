@@ -52,7 +52,7 @@ class AppConfig:
         return cls(
             terminal_path=terminal_path,
             data_path=data_path,
-            instance_name=os.getenv("AUTO_TRADE_INSTANCE_NAME", "Alpari Demo"),
+            instance_name=os.getenv("AUTO_TRADE_INSTANCE_NAME", "Alpari-MT5-Demo"),
             signal_directory=signal_directory,
             log_directory=log_directory,
             policy=ExecutionPolicy(

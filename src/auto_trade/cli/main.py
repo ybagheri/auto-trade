@@ -115,11 +115,10 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
     """Ask the configured strategy for a signal and record the decision.
 
     This is the integration point for a market-analysis library: the library only
-    has to expose a strategy, and the bridge handles the observer read, the
-    signal file, and the audit record.
+    has to expose a strategy, and the bridge handles available position context,
+    the signal file, and the audit record.
     """
     from ..application.strategy import build_context, load_strategy
-    from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
 
     spec = args.strategy or config.strategy_spec
     if not spec:
@@ -136,14 +135,7 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
         return 1
 
     positions: tuple[PositionSnapshot, ...] = ()
-    observer_note = "observer not read"
-    try:
-        provider = MT5FilePositionSnapshotProvider(config.data_path / "MQL5" / "Files")
-        snapshot = provider.snapshot()
-        positions = snapshot.positions
-        observer_note = snapshot.reference
-    except AutoTradeError as exc:
-        print(f"WARNING: {exc}", file=sys.stderr)
+    position_note = "position observation unavailable on this MT5 build"
 
     context = build_context(args.symbol, positions)
     try:
@@ -181,7 +173,7 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
                 "decision": "SIGNAL",
                 "strategy": strategy.name,
                 "written": str(target),
-                "observer": observer_note,
+                "position_observation": position_note,
                 "signal": signal.to_dict(),
             },
             indent=2,

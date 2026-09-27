@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -16,53 +15,28 @@ from auto_trade.domain.models import (
     VerificationEvidence,
 )
 from auto_trade.infrastructure.automation import MT5DesktopAdapter, MT5WindowManager
-from auto_trade.infrastructure.automation.positions_file import ObserverSnapshot
 
 from ..helpers import signal_data
-
-NOW = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
 
 
 def snapshot(ticket: str, symbol: str = "BITCOIN", side: str = "BUY") -> PositionSnapshot:
     return PositionSnapshot(ticket, symbol, side, Decimal("0.01"))
 
 
-def reading(sequence: int, *positions: PositionSnapshot) -> ObserverSnapshot:
-    """An observer reading whose sequence makes the reference distinguishable."""
-    return ObserverSnapshot(
-        sequence=sequence,
-        written_at=NOW,
-        account=53145727,
-        server="Alpari-MT5-Demo",
-        positions=tuple(positions),
-    )
+def reading(*positions: PositionSnapshot) -> tuple[PositionSnapshot, ...]:
+    return tuple(positions)
 
 
 class ScriptedProvider:
-    """Yields a queued sequence of readings, then fails closed."""
-
-    def __init__(self, *readings: ObserverSnapshot) -> None:
+    def __init__(self, *readings: tuple[PositionSnapshot, ...]) -> None:
         self.readings = list(readings)
         self.calls = 0
 
-    def snapshot(self) -> ObserverSnapshot:
+    def positions(self) -> tuple[PositionSnapshot, ...]:
         self.calls += 1
         if not self.readings:
-            raise PositionSnapshotUnavailable("observer snapshot is unavailable")
+            raise PositionSnapshotUnavailable("position observation is unavailable")
         return self.readings.pop(0)
-
-    def positions(self) -> tuple[PositionSnapshot, ...]:
-        return self.snapshot().positions
-
-
-class PositionsOnlyProvider:
-    """A provider with no snapshot() method, exercising the adapter's fallback."""
-
-    def __init__(self, *positions: PositionSnapshot) -> None:
-        self.result = tuple(positions)
-
-    def positions(self) -> tuple[PositionSnapshot, ...]:
-        return self.result
 
 
 class FakeManager(MT5WindowManager):
@@ -75,7 +49,7 @@ def profile() -> TerminalProfile:
         name="alpari-demo",
         terminal_path="terminal64.exe",
         data_path="data",
-        instance_name="Alpari Demo",
+        instance_name="Alpari-MT5-Demo",
     )
 
 
@@ -90,12 +64,10 @@ def connected(provider: Any) -> MT5DesktopAdapter:
     return adapter
 
 
-def prepared(adapter: MT5DesktopAdapter, *readings: ObserverSnapshot) -> MT5DesktopAdapter:
-    """Give the adapter a provider queue and a baseline, as prepare_order would.
-
-    The first reading is consumed as the baseline, so the next read the adapter
-    performs is the "after" state.
-    """
+def prepared(
+    adapter: MT5DesktopAdapter,
+    *readings: tuple[PositionSnapshot, ...],
+) -> MT5DesktopAdapter:
     provider = ScriptedProvider(*readings)
     adapter.position_provider = provider
     adapter._baseline = provider.readings.pop(0) if provider.readings else None
@@ -106,7 +78,7 @@ def prepared(adapter: MT5DesktopAdapter, *readings: ObserverSnapshot) -> MT5Desk
 def test_verification_accepts_exactly_one_new_matching_position() -> None:
     existing = snapshot("111", side="SELL")
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10, existing), reading(11, existing, snapshot("555")))
+    adapter = prepared(adapter, reading(existing), reading(existing, snapshot("555")))
 
     result = adapter.verify_execution(request())
 
@@ -114,20 +86,17 @@ def test_verification_accepts_exactly_one_new_matching_position() -> None:
     assert result.order_reference == "555"
 
 
-def test_accepted_result_carries_both_snapshot_references() -> None:
+def test_accepted_result_carries_position_evidence() -> None:
     existing = snapshot("111", side="SELL")
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10, existing), reading(11, existing, snapshot("555")))
+    adapter = prepared(adapter, reading(existing), reading(existing, snapshot("555")))
 
     result = adapter.verify_execution(request())
 
     evidence = result.evidence
     assert isinstance(evidence, VerificationEvidence)
-    assert "sequence=10" in evidence.baseline
-    assert "sequence=11" in evidence.observed
-    assert "positions=1" in evidence.baseline
-    assert "positions=2" in evidence.observed
-    assert "account=53145727" in evidence.baseline
+    assert "111:BITCOIN:SELL" in evidence.baseline
+    assert "555:BITCOIN:BUY" in evidence.observed
     assert evidence.position_id == "555"
     assert evidence.to_dict()["position_id"] == "555"
 
@@ -135,22 +104,22 @@ def test_accepted_result_carries_both_snapshot_references() -> None:
 def test_unknown_result_still_records_the_observed_reference() -> None:
     existing = snapshot("111", side="SELL")
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10, existing), reading(11, existing))
+    adapter = prepared(adapter, reading(existing), reading(existing))
 
     result = adapter.verify_execution(request())
 
     assert result.status is ExecutionStatus.UNKNOWN
     evidence = result.evidence
     assert isinstance(evidence, VerificationEvidence)
-    assert "sequence=10" in evidence.baseline
-    assert "sequence=11" in evidence.observed
+    assert "111:BITCOIN:SELL" in evidence.baseline
+    assert "111:BITCOIN:SELL" in evidence.observed
     assert evidence.position_id is None
 
 
 def test_verification_reports_unknown_when_nothing_appeared() -> None:
     existing = snapshot("111", side="SELL")
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10, existing), reading(11, existing))
+    adapter = prepared(adapter, reading(existing), reading(existing))
 
     result = adapter.verify_execution(request())
 
@@ -160,7 +129,7 @@ def test_verification_reports_unknown_when_nothing_appeared() -> None:
 
 def test_verification_reports_unknown_on_ambiguous_match() -> None:
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10), reading(11, snapshot("555"), snapshot("556")))
+    adapter = prepared(adapter, reading(), reading(snapshot("555"), snapshot("556")))
 
     result = adapter.verify_execution(request())
 
@@ -168,9 +137,9 @@ def test_verification_reports_unknown_on_ambiguous_match() -> None:
     assert "multiple" in result.message
 
 
-def test_verification_reports_unknown_when_snapshot_fails() -> None:
+def test_verification_reports_unknown_when_observation_fails() -> None:
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10))
+    adapter = prepared(adapter, reading())
 
     result = adapter.verify_execution(request())
 
@@ -179,9 +148,9 @@ def test_verification_reports_unknown_when_snapshot_fails() -> None:
 
 
 def test_verification_reports_unknown_without_a_baseline() -> None:
-    adapter = connected(ScriptedProvider(reading(11, snapshot("555"))))
+    adapter = connected(ScriptedProvider(reading(snapshot("555"))))
     adapter._baseline = None
-    adapter._baseline_error = "no observer snapshot found"
+    adapter._baseline_error = "MT5 Trade grid position values are unavailable"
 
     result = adapter.verify_execution(request())
 
@@ -192,7 +161,7 @@ def test_verification_reports_unknown_without_a_baseline() -> None:
 
 def test_verification_ignores_wrong_side() -> None:
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10), reading(11, snapshot("555", side="SELL")))
+    adapter = prepared(adapter, reading(), reading(snapshot("555", side="SELL")))
 
     assert adapter.verify_execution(request(side="BUY")).status is ExecutionStatus.UNKNOWN
 
@@ -200,36 +169,23 @@ def test_verification_ignores_wrong_side() -> None:
 def test_verification_ignores_wrong_volume() -> None:
     wrong = PositionSnapshot("555", "BITCOIN", "BUY", Decimal("0.50"))
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10), reading(11, wrong))
+    adapter = prepared(adapter, reading(), reading(wrong))
 
     assert adapter.verify_execution(request(volume="0.01")).status is ExecutionStatus.UNKNOWN
 
 
 def test_verification_ignores_wrong_symbol() -> None:
     adapter = connected(ScriptedProvider())
-    adapter = prepared(adapter, reading(10), reading(11, snapshot("555", symbol="EURUSD")))
+    adapter = prepared(adapter, reading(), reading(snapshot("555", symbol="EURUSD")))
 
     assert adapter.verify_execution(request()).status is ExecutionStatus.UNKNOWN
 
 
-def test_provider_without_snapshot_method_still_yields_evidence() -> None:
-    adapter = connected(PositionsOnlyProvider())
-    adapter._baseline = reading(20)
-    adapter._baseline_error = None
-
-    result = adapter.verify_execution(request())
-
-    evidence = result.evidence
-    assert isinstance(evidence, VerificationEvidence)
-    assert evidence.baseline.startswith("sequence=20")
-    assert "sequence=-1" in evidence.observed
-
-
-def test_capture_snapshot_requires_a_connection() -> None:
+def test_capture_positions_requires_a_connection() -> None:
     adapter = MT5DesktopAdapter(profile(), FakeManager(), position_provider=ScriptedProvider())
 
     with pytest.raises(AutomationError, match="not connected"):
-        adapter.capture_snapshot()
+        adapter.capture_positions()
 
 
 def test_execution_controls_remain_refused_without_the_explicit_opt_in() -> None:

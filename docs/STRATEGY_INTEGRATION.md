@@ -23,7 +23,7 @@ accepts, or `None` for "no trade right now".
 | --- | --- |
 | `symbol` | the symbol being evaluated, uppercased |
 | `now` | timezone-aware current time |
-| `positions` | every open position the observer reported |
+| `positions` | observed positions, or an empty tuple when position observation is unavailable |
 | `account` | account snapshot, when one is available |
 | `open_positions_for` | convenience filter for `symbol` |
 
@@ -70,7 +70,7 @@ def build() -> CallableStrategy:
 python -m auto_trade evaluate --symbol BITCOIN
 ```
 
-This reads the observer snapshot, builds the context, calls the strategy, and:
+This builds the context with position observation when available, calls the strategy, and:
 
 - writes nothing and exits `0` with `"decision": "NO_SIGNAL"` when it declines;
 - writes a signal file and records an audit event when it proposes one;

@@ -2,7 +2,7 @@
 
 # Auto Trade
 
-A safety-first Windows desktop execution bridge for MetaTrader 5. The project separates signal generation from desktop execution and currently provides a tested, non-order-producing foundation.
+A safety-first Windows desktop execution bridge for MetaTrader 5. The project separates signal generation from desktop execution and provides a guarded, fail-closed UI execution path.
 
 > **Important safety and compliance notice**
 >
@@ -19,7 +19,7 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Execution state machine with logged transitions.
 - Windows MT5 process discovery using configured executable path and data directory.
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
-- Position-change verification abstraction, a fail-closed snapshot provider backed by a read-only MT5 observer service, and durable JSON execution ledger for restart-safe idempotency.
+- Position-change verification abstraction with a fail-closed UI position reader and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - Local read-only status dashboard with a durable, token-guarded emergency stop.
 - CLI diagnostics and non-executing dry-run processing.
@@ -67,7 +67,7 @@ point `AUTO_TRADE_TERMINAL_PATH`, `AUTO_TRADE_DATA_PATH` and
 `AUTO_TRADE_INSTANCE_NAME` is matched against the window title and fails closed
 when it matches nothing, so an ambiguous or unintended terminal is never driven.
 Only the specified demo terminal should be used for development testing. See
-[MT5 integration](docs/MT5_INTEGRATION.md), [position observer](docs/POSITION_OBSERVER.md)
+[MT5 integration](docs/MT5_INTEGRATION.md)
 and [safety](docs/SAFETY.md).
 
 ## Installation
@@ -78,24 +78,11 @@ py -3.12 -m venv .venv
 python -m pip install -e ".[dev,windows]"
 ```
 
-## Position Observer
-
-Live execution verification needs an independent read of open positions. Install
-the read-only observer and attach it to a chart:
-
-```powershell
-.\scripts\install-observer.ps1 -DataPath "<terminal data dir>"
-```
-
-Then in the terminal: **Navigator → Expert Advisors → AutoTradePositionObserver**,
-then drag it onto a chart or right click → **Attach to Chart**, and confirm with
-`OK`. The program contains no order calls of any kind. It is an Expert Advisor, not
-an MQL5 Service: the service path does not initialise on this terminal build. See
-[position observer](docs/POSITION_OBSERVER.md).
-
+## Quick Start
 ## Quick Start
 
 ```powershell
+$env:AUTO_TRADE_ALLOWED_SYMBOLS = "BITCOIN"
 python -m auto_trade diagnostics
 python -m auto_trade make-signal --symbol BITCOIN --action BUY --volume 0.01
 python -m auto_trade test-signal examples\signals\example.json
@@ -189,16 +176,13 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 106 unit and integration tests executed.
-- **PASS — environment:** diagnostics confirmed the configured MT5 executable, data directory, running process, and a unique responsive demo window matching `AUTO_TRADE_INSTANCE_NAME`.
-- **PASS — controlled dry-run:** a real-terminal BITCOIN BUY dry-run completed the full state machine to `DRY_RUN_COMPLETED` without a final execution control; the CI mock dry-run also passed.
+- **PASS — mocked:** 136 unit and integration tests executed.
+- **PASS — environment:** MT5 executable, data directory, and demo process were found.
+- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
+- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the UI reader fails closed.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
-- **PASS — semantic preparation:** the real-terminal dry-run opened the semantic order dialog, set Symbol/Volume, and closed it without final execution.
-- **MEASURED — UI position reading is not possible:** Trade-grid cell text is empty through UI Automation, Win32 `LVM_GETITEMTEXT`, and MSAA. The grid is owner-drawn.
-- **PASS — observer snapshot:** the read-only observer is attached and running; `position-snapshot` and `/api/positions` both return `AVAILABLE` with an empty position list, and the sequence advances once per second.
-- **MANUAL TEST REQUIRED:** open a demo position by hand and confirm the snapshot reports it.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
-- **PASS — dashboard:** loopback-only server with token-guarded mutations, verified live against this terminal; a stop raised over HTTP blocked a `dry-run` in a separate process.
+- **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.
 
 ## Documentation
 
@@ -211,7 +195,6 @@ Current automated status:
 - [Compliance](docs/COMPLIANCE.md)
 - [Testing](docs/TESTING.md)
 - [Verification](docs/VERIFICATION.md)
-- [Position observer](docs/POSITION_OBSERVER.md)
 - [Dashboard](docs/DASHBOARD.md)
 - [Strategy integration](docs/STRATEGY_INTEGRATION.md)
 - [Execution](docs/EXECUTION.md)

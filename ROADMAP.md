@@ -50,9 +50,8 @@
 - [x] Demo-only policy in the workflow.
 - [x] Persist signal attempts and unknown execution state across restarts.
 - [x] Implement independent position-change verification logic.
-- [x] Connect verification logic to a fail-closed MT5 position snapshot provider.
-- [x] Expose reliable position values through UIA or an approved observation API.
-- [x] Link the baseline and observed snapshot references into the audit record and ledger.
+- [x] Keep position observation fail-closed when the MT5 UI cannot expose values.
+- [ ] Provide an approved, non-OrderSend position observation method.
 
 ## Phase 6 — Desktop UI
 
@@ -73,7 +72,7 @@
 - [x] Provider-to-workflow integration test.
 - [x] Add controlled UI tests.
 - [x] Perform demo connection, window, symbol, and dry-run checks.
-- [x] Attach the position observer and confirm a live snapshot is read.
+- [ ] Provide a position observation method that works without an MQL5 program.
 - [ ] Observe a demo position opened by hand and confirm verification accepts it.
 - [ ] Perform actual demo order only after explicit verification criteria pass.
 

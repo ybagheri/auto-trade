@@ -6,7 +6,7 @@ Runtime configuration currently comes from environment variables with safe defau
 | --- | --- | --- |
 | `AUTO_TRADE_TERMINAL_PATH` | Alpari demo terminal | MT5 executable identity |
 | `AUTO_TRADE_DATA_PATH` | specified MT5 data directory | terminal data identity |
-| `AUTO_TRADE_INSTANCE_NAME` | `Alpari Demo` | instance selection hint |
+| `AUTO_TRADE_INSTANCE_NAME` | `Alpari-MT5-Demo` | instance selection hint matched against the MT5 window title |
 | `AUTO_TRADE_SIGNAL_DIR` | `signals` | local signal directory |
 | `AUTO_TRADE_LOG_DIR` | `logs` | rotating logs |
 | `AUTO_TRADE_DRY_RUN` | `true` | prevents final execution |

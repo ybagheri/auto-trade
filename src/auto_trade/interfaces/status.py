@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from ..application.kill_switch import FileKillSwitch
 from ..application.ledger import JsonExecutionLedger
-from ..domain.exceptions import AutoTradeError
 from ..domain.models import utc_now
-from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
 from ..infrastructure.configuration import AppConfig
 
 AUDIT_FILENAME = "audit.log"
@@ -18,9 +15,9 @@ SIGNAL_SUFFIXES = (".json",)
 class StatusReporter:
     """Read-only view of the running configuration for the local dashboard.
 
-    Nothing here opens the MT5 window or changes state. Position data comes from
-    the observer snapshot, which is a file read, so the dashboard stays responsive
-    and cannot accidentally drive the terminal.
+    Nothing here opens the MT5 window or changes state. The MT5 Trade grid on this
+    build does not expose position values, so the dashboard reports position
+    observation as unavailable rather than guessing.
     """
 
     def __init__(
@@ -65,27 +62,11 @@ class StatusReporter:
         }
 
     def positions(self) -> dict[str, Any]:
-        provider = MT5FilePositionSnapshotProvider(self.observer_directory())
-        try:
-            positions = provider.positions()
-        except AutoTradeError as exc:
-            return {"status": "UNAVAILABLE", "error": str(exc), "positions": []}
         return {
-            "status": "AVAILABLE",
-            "error": None,
-            "positions": [
-                {
-                    "position_id": position.position_id,
-                    "symbol": position.symbol,
-                    "side": position.side,
-                    "volume": str(position.volume),
-                }
-                for position in positions
-            ],
+            "status": "UNAVAILABLE",
+            "error": "MT5 Trade grid position values are not exposed through UI Automation",
+            "positions": [],
         }
-
-    def observer_directory(self) -> Path:
-        return self.config.data_path / "MQL5" / "Files"
 
     def executions(self) -> dict[str, Any]:
         records = sorted(
