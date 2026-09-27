@@ -4,10 +4,12 @@ import importlib
 import re
 import time
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
-from ...domain.enums import AccountType
-from ...domain.exceptions import AutomationError
+from ...application.verification import PositionChangeVerifier
+from ...domain.enums import AccountType, ExecutionState, ExecutionStatus
+from ...domain.exceptions import AutomationError, PositionSnapshotUnavailable
 from ...domain.models import (
     AccountSnapshot,
     ExecutionResult,
@@ -163,15 +165,22 @@ class MT5DesktopAdapter:
         self,
         profile: TerminalProfile,
         window_manager: MT5WindowManager | None = None,
+        position_provider: Any | None = None,
     ) -> None:
         self.profile = profile
         self.window_manager = window_manager or MT5WindowManager()
-        from .positions import MT5PositionSnapshotProvider
+        if position_provider is None:
+            from .positions_file import MT5FilePositionSnapshotProvider
 
-        self.position_provider = MT5PositionSnapshotProvider(self.window_manager)
+            position_provider = MT5FilePositionSnapshotProvider(
+                Path(profile.data_path) / "MQL5" / "Files"
+            )
+        self.position_provider = position_provider
         self.connected = False
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
+        self._baseline: tuple[PositionSnapshot, ...] | None = None
+        self._baseline_error: str | None = None
 
     def connect(self) -> AccountSnapshot:
         WindowsTerminalDiscovery().discover(self.profile)
@@ -209,8 +218,23 @@ class MT5DesktopAdapter:
             if self.window_manager.read_field("10333") != self._format_decimal(request.volume):
                 raise AutomationError("volume field did not accept the request")
             self.prepared = request
+            self._capture_baseline()
         finally:
             self.window_manager.close_order_dialog()
+
+    def _capture_baseline(self) -> None:
+        """Record open positions immediately before the final execution control.
+
+        A baseline that cannot be observed is recorded as an error rather than
+        silently treated as "no positions", so verification can never succeed by
+        comparing against an empty account it did not actually observe.
+        """
+        try:
+            self._baseline = self.capture_positions()
+            self._baseline_error = None
+        except PositionSnapshotUnavailable as exc:
+            self._baseline = None
+            self._baseline_error = str(exc)
 
     @staticmethod
     def _format_decimal(value: Decimal) -> str:
@@ -225,7 +249,38 @@ class MT5DesktopAdapter:
         raise AutomationError("real MT5 execution is not enabled; final controls are blocked")
 
     def verify_execution(self, request: OrderRequest) -> ExecutionResult:
-        raise AutomationError("real MT5 verification is not implemented")
+        """Confirm the outcome against an independently observed position list.
+
+        A snapshot that cannot be read, or a missing baseline, produces UNKNOWN.
+        Only exactly one new position matching symbol, side and volume is accepted.
+        """
+        if self._baseline is None:
+            detail = self._baseline_error or "no position baseline was captured"
+            return self._unknown(request, f"verification baseline unavailable: {detail}")
+        try:
+            after = self.capture_positions()
+        except PositionSnapshotUnavailable as exc:
+            return self._unknown(request, f"position snapshot unavailable: {exc}")
+        outcome = PositionChangeVerifier().verify(request, self._baseline, after)
+        if not outcome.verified:
+            return self._unknown(request, outcome.message)
+        return ExecutionResult(
+            execution_id="",
+            signal_id=request.signal.signal_id,
+            status=ExecutionStatus.ACCEPTED,
+            state=ExecutionState.SUCCESS.value,
+            message=outcome.message,
+            order_reference=outcome.position_id,
+        )
+
+    def _unknown(self, request: OrderRequest, message: str) -> ExecutionResult:
+        return ExecutionResult(
+            execution_id="",
+            signal_id=request.signal.signal_id,
+            status=ExecutionStatus.UNKNOWN,
+            state=ExecutionState.VERIFICATION_FAILED.value,
+            message=message,
+        )
 
     def close_position(self, position_id: str) -> ExecutionResult:
         raise AutomationError("real MT5 position closing is not implemented")
