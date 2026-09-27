@@ -143,6 +143,7 @@ class ExecutionWorkflow:
                 ExecutionState.SUCCESS,
                 verified.message,
                 verified.order_reference,
+                evidence=verified.evidence,
             )
         except SafetyViolation as exc:
             if machine.state is ExecutionState.VALIDATING:

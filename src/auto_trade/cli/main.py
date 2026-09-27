@@ -68,6 +68,15 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="where to write the signal; defaults to the configured signal directory",
     )
+    execute = subparsers.add_parser(
+        "execute", help="execute one explicitly confirmed demo signal"
+    )
+    execute.add_argument("signal_file", type=Path)
+    execute.add_argument(
+        "--confirm-demo",
+        action="store_true",
+        help="required acknowledgement that this may place a demo order",
+    )
     subparsers.add_parser("run", help="run the configured signal loop")
     dashboard = subparsers.add_parser(
         "dashboard", help="serve the local read-only status dashboard"
@@ -220,6 +229,67 @@ def _dashboard(config: AppConfig, args: argparse.Namespace) -> int:
     return 0
 
 
+def _execute_live(config: AppConfig, args: argparse.Namespace) -> int:
+    if not args.confirm_demo:
+        print("ERROR: --confirm-demo is required", file=sys.stderr)
+        return 2
+    if not config.policy.execution_enabled:
+        print(
+            "ERROR: execution is disabled; set AUTO_TRADE_ENABLE_EXECUTION=true",
+            file=sys.stderr,
+        )
+        return 2
+    if config.policy.dry_run:
+        print("ERROR: AUTO_TRADE_DRY_RUN must be false", file=sys.stderr)
+        return 2
+    if not config.policy.demo_only:
+        print("ERROR: demo-only policy must remain enabled", file=sys.stderr)
+        return 2
+
+    from ..application.kill_switch import FileKillSwitch
+    from ..infrastructure.automation.execution import ExecutionGate
+    from ..interfaces import kill_switch_path
+
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    gate = ExecutionGate(
+        enabled=True,
+        dry_run=False,
+        demo_only=True,
+        kill_switch_active=kill_switch.active,
+    )
+    terminal = MT5DesktopAdapter(config.terminal_profile(), gate=gate)
+    policy = type(config.policy)(
+        dry_run=False,
+        demo_only=True,
+        confirmation=config.policy.confirmation,
+        execution_enabled=True,
+    )
+    workflow = ExecutionWorkflow(
+        adapter=terminal,
+        risk_engine=RiskEngine(config.risk),
+        profile=config.terminal_profile(),
+        policy=policy,
+        kill_switch=kill_switch,
+        audit=AuditLogger(config.log_directory).record,
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+    )
+    try:
+        result = workflow.execute(_signal(args.signal_file))
+    except (OSError, ValueError, AutoTradeError, TimeoutError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    output = {
+        "status": result.status.value,
+        "state": result.state,
+        "message": result.message,
+        "order_reference": result.order_reference,
+        "evidence": result.evidence.to_dict() if result.evidence else None,
+        "error": result.error,
+    }
+    print(json.dumps(output, indent=2))
+    return 0 if result.status.value == "ACCEPTED" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     config = AppConfig.from_env()
@@ -227,10 +297,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(_diagnostics(config), indent=2, default=str))
         return 0
     if args.command == "position-snapshot":
-        adapter = MT5DesktopAdapter(config.terminal_profile())
+        from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
+
         try:
-            adapter.connect()
-            positions = adapter.capture_positions()
+            provider = MT5FilePositionSnapshotProvider(
+                config.data_path / "MQL5" / "Files"
+            )
+            positions = provider.positions()
         except AutoTradeError as exc:
             print(json.dumps({"status": "UNAVAILABLE", "error": str(exc)}, indent=2))
             return 1
@@ -288,6 +361,8 @@ def main(argv: list[str] | None = None) -> int:
         return _dashboard(config, args)
     if args.command == "evaluate":
         return _evaluate(config, args)
+    if args.command == "execute":
+        return _execute_live(config, args)
     if args.command == "run":
         print("run is not enabled until a verified MT5 desktop adapter is implemented")
         return 2

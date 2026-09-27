@@ -101,6 +101,7 @@ python -m auto_trade test-signal examples\signals\example.json
 python -m auto_trade dry-run --mock examples\signals\example.json
 python -m auto_trade dry-run examples\signals\example.json
 python -m auto_trade position-snapshot
+python -m auto_trade execute --confirm-demo <signal-file>
 python -m auto_trade recovery
 python -m auto_trade evaluate --symbol BITCOIN
 python -m auto_trade dashboard

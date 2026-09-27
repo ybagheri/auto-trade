@@ -173,3 +173,26 @@ def test_dry_run_forces_dry_run_even_when_configured_live(tmp_path: Path) -> Non
 
     assert completed.returncode == 0
     assert json.loads(completed.stdout)["status"] == "DRY_RUN"
+
+
+def test_execute_requires_explicit_demo_confirmation(tmp_path: Path) -> None:
+    signal = tmp_path / "signal.json"
+    assert generate_bitcoin_signal(signal) == 0
+
+    code = main(["execute", str(signal)])
+
+    assert code == 2
+
+
+def test_execute_refuses_when_execution_is_not_explicitly_enabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    signal = tmp_path / "signal.json"
+    assert generate_bitcoin_signal(signal) == 0
+    monkeypatch.setenv("AUTO_TRADE_ENABLE_EXECUTION", "false")
+    monkeypatch.setenv("AUTO_TRADE_DRY_RUN", "false")
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+
+    code = main(["execute", "--confirm-demo", str(signal)])
+
+    assert code == 2

@@ -192,6 +192,7 @@ class MT5DesktopAdapter:
             )
         self.position_provider = position_provider
         self.connected = False
+        self.verification_timeout_seconds = 5.0
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
         self._baseline: tuple[PositionSnapshot, ...] | None = None
@@ -234,7 +235,10 @@ class MT5DesktopAdapter:
                 raise AutomationError("volume field did not accept the request")
             self.prepared = request
             self._capture_baseline()
-        finally:
+        except Exception:
+            self.window_manager.close_order_dialog()
+            raise
+        if self.gate.dry_run:
             self.window_manager.close_order_dialog()
 
     def _capture_baseline(self) -> None:
@@ -307,27 +311,34 @@ class MT5DesktopAdapter:
         if self._baseline is None:
             detail = self._baseline_error or "no position baseline was captured"
             return self._unknown(request, f"verification baseline unavailable: {detail}")
-        try:
-            after = self.capture_positions()
-        except PositionSnapshotUnavailable as exc:
-            return self._unknown(request, f"position observation unavailable: {exc}")
-        outcome = PositionChangeVerifier().verify(request, self._baseline, after)
-        evidence = VerificationEvidence(
-            baseline=self._position_reference(self._baseline),
-            observed=self._position_reference(after),
-            position_id=outcome.position_id,
-        )
-        if not outcome.verified:
-            return self._unknown(request, outcome.message, evidence)
-        return ExecutionResult(
-            execution_id="",
-            signal_id=request.signal.signal_id,
-            status=ExecutionStatus.ACCEPTED,
-            state=ExecutionState.SUCCESS.value,
-            message=outcome.message,
-            order_reference=outcome.position_id,
-            evidence=evidence,
-        )
+        deadline = time.monotonic() + self.verification_timeout_seconds
+        last_evidence: VerificationEvidence | None = None
+        last_message = "no position observation completed"
+        while True:
+            try:
+                after = self.capture_positions()
+            except PositionSnapshotUnavailable as exc:
+                return self._unknown(request, f"position observation unavailable: {exc}")
+            outcome = PositionChangeVerifier().verify(request, self._baseline, after)
+            last_message = outcome.message
+            last_evidence = VerificationEvidence(
+                baseline=self._position_reference(self._baseline),
+                observed=self._position_reference(after),
+                position_id=outcome.position_id,
+            )
+            if outcome.verified:
+                return ExecutionResult(
+                    execution_id="",
+                    signal_id=request.signal.signal_id,
+                    status=ExecutionStatus.ACCEPTED,
+                    state=ExecutionState.SUCCESS.value,
+                    message=outcome.message,
+                    order_reference=outcome.position_id,
+                    evidence=last_evidence,
+                )
+            if time.monotonic() >= deadline:
+                return self._unknown(request, last_message, last_evidence)
+            time.sleep(0.25)
 
     @staticmethod
     def _position_reference(positions: tuple[PositionSnapshot, ...]) -> str:

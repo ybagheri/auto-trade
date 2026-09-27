@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import subprocess
 import time
+from ctypes import wintypes
 from pathlib import Path
 
 from ...domain.exceptions import TerminalNotFoundError
@@ -14,9 +16,6 @@ _PROCESS_QUERY = (
     "Get-CimInstance Win32_Process -Filter \"Name='terminal64.exe'\" | "
     "Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"
 )
-
-_WINDOW_QUERY = "Get-Process -Name terminal64 -ErrorAction SilentlyContinue | \
-Select-Object Id,MainWindowTitle | ConvertTo-Json -Compress"
 
 
 class WindowsTerminalDiscovery:
@@ -38,8 +37,7 @@ class WindowsTerminalDiscovery:
 
         wanted = profile.instance_name.strip().lower()
         if wanted:
-            matched = self._match_instance(matches, wanted, profile.instance_name)
-            matches = matched
+            matches = self._match_instance(matches, wanted, profile.instance_name)
 
         if len(matches) > 1:
             process_ids = ", ".join(str(_process_id(record)) for record in matches)
@@ -55,13 +53,6 @@ class WindowsTerminalDiscovery:
         wanted: str,
         instance_name: str,
     ) -> list[dict[str, object]]:
-        """Match the window title, retrying briefly while the window is still opening.
-
-        A freshly launched terminal already has a process but no window title for a
-        short while. Failing immediately there is correct but unhelpful, so the
-        title is polled for a bounded time. The check still fails closed: if no
-        title ever matches, discovery refuses rather than guessing.
-        """
         deadline = time.monotonic() + _TITLE_WAIT_SECONDS
         while True:
             titles = self._window_titles()
@@ -95,13 +86,29 @@ class WindowsTerminalDiscovery:
             return [raw]
         return list(raw)
 
-    @classmethod
-    def _window_titles(cls) -> dict[int, str]:
+    @staticmethod
+    def _window_titles() -> dict[int, str]:
+        user32 = getattr(ctypes, "windll").user32
         titles: dict[int, str] = {}
-        for record in cls._query(_WINDOW_QUERY):
-            process_id = _process_id(record)
-            if process_id is not None:
-                titles[process_id] = str(record.get("MainWindowTitle") or "")
+        callback_type = ctypes.WINFUNCTYPE(
+            ctypes.c_bool,
+            wintypes.HWND,
+            wintypes.LPARAM,
+        )
+
+        def collect(handle: int, _parameter: int) -> bool:
+            if not user32.IsWindowVisible(handle):
+                return True
+            process_id = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(handle, ctypes.byref(process_id))
+            length = user32.GetWindowTextLengthW(handle)
+            if length:
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(handle, buffer, length + 1)
+                titles[int(process_id.value)] = buffer.value
+            return True
+
+        user32.EnumWindows(callback_type(collect), 0)
         return titles
 
 

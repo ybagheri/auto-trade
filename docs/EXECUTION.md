@@ -67,9 +67,13 @@ AUTO_TRADE_ENABLE_EXECUTION=true
 AUTO_TRADE_DRY_RUN=false
 ```
 
-Both are required. The CLI `dry-run` path constructs its adapter with
-`enabled=False` regardless of configuration, so the documented dry-run workflow
-can never reach a final control.
+Both are required. The CLI `execute` command additionally requires `--confirm-demo`:
+
+```powershell
+python -m auto_trade execute --confirm-demo <signal-file>
+```
+
+The CLI `dry-run` path constructs its adapter with `enabled=False` regardless of configuration, so the documented dry-run workflow can never reach a final control.
 
 Enabling this on a live account is outside what this project has been tested for.
 The supported target is a demo account, and the first run should be watched:

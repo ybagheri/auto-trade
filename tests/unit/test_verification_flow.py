@@ -60,6 +60,7 @@ def request(symbol: str = "BITCOIN", side: str = "BUY", volume: str = "0.01") ->
 
 def connected(provider: Any) -> MT5DesktopAdapter:
     adapter = MT5DesktopAdapter(profile(), FakeManager(), position_provider=provider)
+    adapter.verification_timeout_seconds = 0
     adapter.connected = True
     return adapter
 
