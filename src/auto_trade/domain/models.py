@@ -191,10 +191,12 @@ class ExecutionPolicy:
         dry_run: bool = True,
         demo_only: bool = True,
         confirmation: ConfirmationPolicy = ConfirmationPolicy.SINGLE_CONFIRMATION,
+        execution_enabled: bool = False,
     ) -> None:
         self.dry_run = dry_run
         self.demo_only = demo_only
         self.confirmation = confirmation
+        self.execution_enabled = execution_enabled
 
 
 class AccountSnapshot:

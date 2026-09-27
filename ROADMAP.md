@@ -35,9 +35,10 @@
 - [x] Implement terminal/window manager.
 - [x] Implement semantic symbol selection.
 - [x] Implement volume and SL/TP preparation.
-- [ ] Implement guarded BUY/SELL action.
-- [x] Implement rejection and timeout classification.
-- [ ] Validate rejection and timeout classification against controlled MT5 states.
+- [x] Implement guarded BUY/SELL action.
+- [x] Reject an execution whose prepared dialog no longer matches the approved request.
+- [x] Refuse a final control unless execution is explicitly enabled.
+- [x] Validate rejection and timeout classification against controlled MT5 states.
 
 ## Phase 5 — Safety and Verification
 
@@ -61,8 +62,9 @@
 
 ## Phase 7 — External Integration
 
-- [ ] Document indicator signal bridge.
-- [ ] Document EA signal bridge without order execution.
+- [x] Document indicator signal bridge.
+- [x] Document EA signal bridge without order execution.
+- [x] Add a strategy plugin seam for a market-analysis library.
 - [ ] Add authenticated local APIs.
 
 ## Phase 8 — Testing

@@ -9,7 +9,11 @@ from typing import Any
 
 from ...application.verification import PositionChangeVerifier
 from ...domain.enums import AccountType, ExecutionState, ExecutionStatus
-from ...domain.exceptions import AutomationError, PositionSnapshotUnavailable
+from ...domain.exceptions import (
+    AutomationError,
+    AutomationRejectedError,
+    PositionSnapshotUnavailable,
+)
 from ...domain.models import (
     AccountSnapshot,
     ExecutionResult,
@@ -20,6 +24,15 @@ from ...domain.models import (
     utc_now,
 )
 from ..terminal.discovery import WindowsTerminalDiscovery
+from .execution import (
+    ExecutionGate,
+    assert_action_supported,
+    click_final_control,
+    confirm_dialog_matches,
+    plain_decimal,
+    refused_result,
+    wait_for_dialog_to_close,
+)
 from .positions_file import ObserverSnapshot
 
 
@@ -169,9 +182,11 @@ class MT5DesktopAdapter:
         profile: TerminalProfile,
         window_manager: MT5WindowManager | None = None,
         position_provider: Any | None = None,
+        gate: ExecutionGate | None = None,
     ) -> None:
         self.profile = profile
         self.window_manager = window_manager or MT5WindowManager()
+        self.gate = gate if gate is not None else ExecutionGate()
         if position_provider is None:
             from .positions_file import MT5FilePositionSnapshotProvider
 
@@ -270,7 +285,40 @@ class MT5DesktopAdapter:
         )
 
     def execute_order(self, request: OrderRequest) -> ExecutionResult:
-        raise AutomationError("real MT5 execution is not enabled; final controls are blocked")
+        """Use the final execution control, only if every gate allows it.
+
+        Refusal is the default. A control click is reported as REQUESTED, never
+        as success: acceptance is established afterwards by independent
+        observation in ``verify_execution``.
+        """
+        gate = self.gate
+        reason = gate.refusal()
+        if reason:
+            return refused_result(request, reason)
+        try:
+            assert_action_supported(request)
+        except AutomationRejectedError as exc:
+            return refused_result(request, str(exc))
+        if self._baseline is None:
+            detail = self._baseline_error or "no position baseline was captured"
+            return refused_result(request, f"refusing to execute: {detail}")
+        try:
+            dialog_manager = self.window_manager
+            confirm_dialog_matches(dialog_manager, request)
+            click_final_control(dialog_manager, request.action)
+        except (AutomationError, AutomationRejectedError) as exc:
+            return refused_result(request, f"refusing to execute: {exc}")
+        wait_for_dialog_to_close(dialog_manager)
+        return ExecutionResult(
+            execution_id="",
+            signal_id=request.signal.signal_id,
+            status=ExecutionStatus.REQUESTED,
+            state=ExecutionState.EXECUTING.value,
+            message=(
+                f"final control used for {request.action.value} {request.symbol} "
+                f"{plain_decimal(request.volume)}; acceptance not yet observed"
+            ),
+        )
 
     def verify_execution(self, request: OrderRequest) -> ExecutionResult:
         """Confirm the outcome against an independently observed position list.

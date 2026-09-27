@@ -103,12 +103,31 @@ python -m auto_trade dry-run --mock examples\signals\example.json
 python -m auto_trade dry-run examples\signals\example.json
 python -m auto_trade position-snapshot
 python -m auto_trade recovery
+python -m auto_trade evaluate --symbol BITCOIN
 python -m auto_trade dashboard
 ```
 
 A signal expires at `timestamp + expiration_seconds` unless it carries an explicit
 `expiration`, so generate one with `make-signal` rather than editing the example by
 hand. `make-signal` also writes the file that the other commands read.
+
+## Strategy Integration
+
+A market-analysis library plugs in by exposing a strategy: a string `name` and an
+`evaluate(context)` method returning a signal or `None`. Copy
+`strategies/example_strategy.py`, replace the body, and set
+`AUTO_TRADE_STRATEGY=your_module:build`. The library only proposes a trade; it
+cannot reach the terminal, the risk engine, or the audit log, and it cannot widen
+its own permissions. See [strategy integration](docs/STRATEGY_INTEGRATION.md).
+
+## Execution
+
+The final order control is refused unless `AUTO_TRADE_ENABLE_EXECUTION=true` is
+set explicitly. The gate also refuses while dry-run is active, while the kill
+switch is engaged, when the demo-only policy is not met, when no observed
+baseline exists, and when the prepared dialog no longer matches what the risk
+engine approved. A click is recorded as an action only; acceptance is decided by
+independent observation. See [execution](docs/EXECUTION.md).
 
 ## Dashboard
 
@@ -194,6 +213,8 @@ Current automated status:
 - [Verification](docs/VERIFICATION.md)
 - [Position observer](docs/POSITION_OBSERVER.md)
 - [Dashboard](docs/DASHBOARD.md)
+- [Strategy integration](docs/STRATEGY_INTEGRATION.md)
+- [Execution](docs/EXECUTION.md)
 - [Recovery](docs/RECOVERY.md)
 - [Persian documentation](README.fa.md)
 

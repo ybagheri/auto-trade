@@ -232,11 +232,13 @@ def test_capture_snapshot_requires_a_connection() -> None:
         adapter.capture_snapshot()
 
 
-def test_execution_controls_remain_blocked() -> None:
+def test_execution_controls_remain_refused_without_the_explicit_opt_in() -> None:
     adapter = connected(ScriptedProvider())
 
-    with pytest.raises(AutomationError, match="final controls are blocked"):
-        adapter.execute_order(request())
+    result = adapter.execute_order(request())
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert "AUTO_TRADE_ENABLE_EXECUTION" in result.message
 
 
 def test_verification_evidence_requires_both_references() -> None:

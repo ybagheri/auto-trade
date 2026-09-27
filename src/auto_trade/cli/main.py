@@ -13,7 +13,7 @@ from ..application.ledger import JsonExecutionLedger
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError
-from ..domain.models import TradeSignal, utc_now
+from ..domain.models import AuditEvent, PositionSnapshot, TradeSignal, utc_now
 from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
 from ..infrastructure.logging import AuditLogger
@@ -52,6 +52,21 @@ def _parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=Path("examples") / "signals" / "example.json",
+    )
+    evaluate = subparsers.add_parser(
+        "evaluate", help="ask the configured strategy for a signal on one symbol"
+    )
+    evaluate.add_argument("--symbol", required=True)
+    evaluate.add_argument(
+        "--strategy",
+        default=None,
+        help="override AUTO_TRADE_STRATEGY, as 'package.module:attribute'",
+    )
+    evaluate.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="where to write the signal; defaults to the configured signal directory",
     )
     subparsers.add_parser("run", help="run the configured signal loop")
     dashboard = subparsers.add_parser(
@@ -94,6 +109,85 @@ def _diagnostics(config: AppConfig) -> dict[str, object]:
         "allowed_symbols": sorted(config.risk.allowed_symbols),
         "max_volume": str(config.risk.max_volume),
     }
+
+
+def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
+    """Ask the configured strategy for a signal and record the decision.
+
+    This is the integration point for a market-analysis library: the library only
+    has to expose a strategy, and the bridge handles the observer read, the
+    signal file, and the audit record.
+    """
+    from ..application.strategy import build_context, load_strategy
+    from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
+
+    spec = args.strategy or config.strategy_spec
+    if not spec:
+        print(
+            "no strategy configured. Set AUTO_TRADE_STRATEGY=package.module:attribute, "
+            "or pass --strategy. See docs/STRATEGY_INTEGRATION.md.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        strategy = load_strategy(spec)
+    except AutoTradeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    positions: tuple[PositionSnapshot, ...] = ()
+    observer_note = "observer not read"
+    try:
+        provider = MT5FilePositionSnapshotProvider(config.data_path / "MQL5" / "Files")
+        snapshot = provider.snapshot()
+        positions = snapshot.positions
+        observer_note = snapshot.reference
+    except AutoTradeError as exc:
+        print(f"WARNING: {exc}", file=sys.stderr)
+
+    context = build_context(args.symbol, positions)
+    try:
+        signal = strategy.evaluate(context)
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: strategy {spec!r} raised {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    if signal is None:
+        print(
+            json.dumps(
+                {"decision": "NO_SIGNAL", "strategy": strategy.name, "symbol": args.symbol},
+                indent=2,
+            )
+        )
+        return 0
+
+    target = args.output or (config.signal_directory / f"{signal.signal_id}.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(signal.to_dict(), indent=2), encoding="utf-8")
+    AuditLogger(config.log_directory).record(
+        AuditEvent(
+            component="strategy",
+            event_type="decision",
+            message=f"strategy {strategy.name} proposed a signal",
+            signal_id=signal.signal_id,
+            symbol=signal.symbol,
+            action=signal.action.value,
+            volume=signal.volume,
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "decision": "SIGNAL",
+                "strategy": strategy.name,
+                "written": str(target),
+                "observer": observer_note,
+                "signal": signal.to_dict(),
+            },
+            indent=2,
+        )
+    )
+    return 0
 
 
 def _dashboard(config: AppConfig, args: argparse.Namespace) -> int:
@@ -190,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "dashboard":
         return _dashboard(config, args)
+    if args.command == "evaluate":
+        return _evaluate(config, args)
     if args.command == "run":
         print("run is not enabled until a verified MT5 desktop adapter is implemented")
         return 2
@@ -205,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
             confirmation=config.policy.confirmation,
         )
         from ..application.kill_switch import FileKillSwitch
+        from ..infrastructure.automation.execution import ExecutionGate
         from ..interfaces import kill_switch_path
 
         # File backed so an emergency stop raised by the dashboard, another
@@ -213,7 +310,17 @@ def main(argv: list[str] | None = None) -> int:
         terminal = (
             DryRunTerminalAdapter()
             if args.mock
-            else MT5DesktopAdapter(config.terminal_profile())
+            else MT5DesktopAdapter(
+                config.terminal_profile(),
+                # This path is a dry run, so the final control is unreachable by
+                # construction and the opt-in is deliberately not consulted.
+                gate=ExecutionGate(
+                    enabled=False,
+                    dry_run=True,
+                    demo_only=config.policy.demo_only,
+                    kill_switch_active=kill_switch.active,
+                ),
+            )
         )
         workflow = ExecutionWorkflow(
             adapter=terminal,

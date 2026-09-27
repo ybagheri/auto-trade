@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import pytest
-
-from auto_trade.domain.exceptions import AutomationError
+from auto_trade.domain.enums import ExecutionStatus
 from auto_trade.domain.models import OrderRequest, TerminalProfile, TradeSignal
 from auto_trade.infrastructure.automation import MT5DesktopAdapter, MT5WindowManager
 
@@ -33,8 +31,12 @@ def test_window_manager_matches_demo_instance() -> None:
     assert MT5WindowManager._matches(FakeWindow().window_text(), profile())
 
 
-def test_real_adapter_refuses_final_execution() -> None:
+def test_real_adapter_refuses_final_execution_by_default() -> None:
+    """A fresh adapter must refuse, and must say why."""
     adapter = MT5DesktopAdapter(profile(), FakeManager())
     request = OrderRequest(TradeSignal.from_dict(signal_data()))
-    with pytest.raises(AutomationError, match="final controls are blocked"):
-        adapter.execute_order(request)
+
+    result = adapter.execute_order(request)
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert "AUTO_TRADE_ENABLE_EXECUTION" in result.message

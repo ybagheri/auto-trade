@@ -10,6 +10,10 @@ from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
 from .env_file import load_env_file
 
 
+def _flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class AppConfig:
     terminal_path: Path
@@ -19,6 +23,7 @@ class AppConfig:
     log_directory: Path
     policy: ExecutionPolicy
     risk: RiskLimits
+    strategy_spec: str = ""
 
     @classmethod
     def from_env(cls) -> AppConfig:
@@ -51,16 +56,18 @@ class AppConfig:
             signal_directory=signal_directory,
             log_directory=log_directory,
             policy=ExecutionPolicy(
-                dry_run=os.getenv("AUTO_TRADE_DRY_RUN", "true").lower()
-                in {"1", "true", "yes"},
-                demo_only=os.getenv("AUTO_TRADE_DEMO_ONLY", "true").lower()
-                in {"1", "true", "yes"},
+                dry_run=_flag("AUTO_TRADE_DRY_RUN", "true"),
+                demo_only=_flag("AUTO_TRADE_DEMO_ONLY", "true"),
                 confirmation=ConfirmationPolicy(
                     os.getenv(
                         "AUTO_TRADE_CONFIRMATION", "SINGLE_CONFIRMATION"
                     ).upper()
                 ),
+                # Final execution controls stay unavailable unless this is
+                # explicitly turned on. It is never derived from a default.
+                execution_enabled=_flag("AUTO_TRADE_ENABLE_EXECUTION", "false"),
             ),
+            strategy_spec=os.getenv("AUTO_TRADE_STRATEGY", "").strip(),
             risk=RiskLimits(
                 allowed_symbols=allowed,
                 max_volume=Decimal(os.getenv("AUTO_TRADE_MAX_VOLUME", "1.0")),
