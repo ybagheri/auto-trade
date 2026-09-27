@@ -51,6 +51,7 @@
 - [x] Implement independent position-change verification logic.
 - [x] Connect verification logic to a fail-closed MT5 position snapshot provider.
 - [x] Expose reliable position values through UIA or an approved observation API.
+- [x] Link the baseline and observed snapshot references into the audit record and ledger.
 
 ## Phase 6 — Desktop UI
 

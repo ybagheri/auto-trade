@@ -16,8 +16,11 @@ from ...domain.models import (
     OrderRequest,
     PositionSnapshot,
     TerminalProfile,
+    VerificationEvidence,
+    utc_now,
 )
 from ..terminal.discovery import WindowsTerminalDiscovery
+from .positions_file import ObserverSnapshot
 
 
 class MT5WindowManager:
@@ -179,7 +182,7 @@ class MT5DesktopAdapter:
         self.connected = False
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
-        self._baseline: tuple[PositionSnapshot, ...] | None = None
+        self._baseline: ObserverSnapshot | None = None
         self._baseline_error: str | None = None
 
     def connect(self) -> AccountSnapshot:
@@ -223,14 +226,14 @@ class MT5DesktopAdapter:
             self.window_manager.close_order_dialog()
 
     def _capture_baseline(self) -> None:
-        """Record open positions immediately before the final execution control.
+        """Record the observed account state immediately before a final control.
 
         A baseline that cannot be observed is recorded as an error rather than
         silently treated as "no positions", so verification can never succeed by
         comparing against an empty account it did not actually observe.
         """
         try:
-            self._baseline = self.capture_positions()
+            self._baseline = self.capture_snapshot()
             self._baseline_error = None
         except PositionSnapshotUnavailable as exc:
             self._baseline = None
@@ -245,6 +248,27 @@ class MT5DesktopAdapter:
             raise AutomationError("MT5 terminal is not connected")
         return self.position_provider.positions()
 
+    def capture_snapshot(self) -> Any:
+        """Read the observer snapshot including its reference metadata.
+
+        Falls back to a synthesised reference when the provider only exposes
+        positions, so a custom provider still yields traceable evidence.
+        """
+        if not self.connected:
+            raise AutomationError("MT5 terminal is not connected")
+        provider = self.position_provider
+        reader = getattr(provider, "snapshot", None)
+        if callable(reader):
+            return reader()
+        positions = provider.positions()
+        return ObserverSnapshot(
+            sequence=-1,
+            written_at=utc_now(),
+            account=None,
+            server=None,
+            positions=tuple(positions),
+        )
+
     def execute_order(self, request: OrderRequest) -> ExecutionResult:
         raise AutomationError("real MT5 execution is not enabled; final controls are blocked")
 
@@ -253,17 +277,26 @@ class MT5DesktopAdapter:
 
         A snapshot that cannot be read, or a missing baseline, produces UNKNOWN.
         Only exactly one new position matching symbol, side and volume is accepted.
+        The baseline and observed references travel with the result so a verified
+        outcome can be traced back to the exact readings that produced it.
         """
         if self._baseline is None:
             detail = self._baseline_error or "no position baseline was captured"
             return self._unknown(request, f"verification baseline unavailable: {detail}")
         try:
-            after = self.capture_positions()
+            after = self.capture_snapshot()
         except PositionSnapshotUnavailable as exc:
             return self._unknown(request, f"position snapshot unavailable: {exc}")
-        outcome = PositionChangeVerifier().verify(request, self._baseline, after)
+        outcome = PositionChangeVerifier().verify(
+            request, self._baseline.positions, after.positions
+        )
+        evidence = VerificationEvidence(
+            baseline=self._baseline.reference,
+            observed=after.reference,
+            position_id=outcome.position_id,
+        )
         if not outcome.verified:
-            return self._unknown(request, outcome.message)
+            return self._unknown(request, outcome.message, evidence)
         return ExecutionResult(
             execution_id="",
             signal_id=request.signal.signal_id,
@@ -271,15 +304,22 @@ class MT5DesktopAdapter:
             state=ExecutionState.SUCCESS.value,
             message=outcome.message,
             order_reference=outcome.position_id,
+            evidence=evidence,
         )
 
-    def _unknown(self, request: OrderRequest, message: str) -> ExecutionResult:
+    def _unknown(
+        self,
+        request: OrderRequest,
+        message: str,
+        evidence: VerificationEvidence | None = None,
+    ) -> ExecutionResult:
         return ExecutionResult(
             execution_id="",
             signal_id=request.signal.signal_id,
             status=ExecutionStatus.UNKNOWN,
             state=ExecutionState.VERIFICATION_FAILED.value,
             message=message,
+            evidence=evidence,
         )
 
     def close_position(self, position_id: str) -> ExecutionResult:

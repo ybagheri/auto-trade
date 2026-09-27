@@ -21,6 +21,7 @@ from ..domain.models import (
     OrderRequest,
     TerminalProfile,
     TradeSignal,
+    VerificationEvidence,
 )
 from ..domain.protocols import KillSwitch, TradingTerminalAdapter
 from .ledger import ExecutionLedger
@@ -227,6 +228,7 @@ class ExecutionWorkflow:
         message: str,
         state: str | None = None,
         error: str | None = None,
+        evidence: VerificationEvidence | None = None,
     ) -> None:
         self.audit(
             AuditEvent(
@@ -240,6 +242,7 @@ class ExecutionWorkflow:
                 volume=signal.volume,
                 state=state,
                 error=error,
+                evidence=evidence,
             )
         )
 
@@ -252,6 +255,7 @@ class ExecutionWorkflow:
         message: str,
         order_reference: str | None = None,
         error: str | None = None,
+        evidence: VerificationEvidence | None = None,
     ) -> ExecutionResult:
         result = ExecutionResult(
             execution_id,
@@ -261,8 +265,9 @@ class ExecutionWorkflow:
             message,
             order_reference,
             error,
+            evidence,
         )
         if self.ledger is not None:
             self.ledger.record_result(result)
-        self._record(execution_id, signal, "result", message, state.value, error)
+        self._record(execution_id, signal, "result", message, state.value, error, evidence)
         return result

@@ -14,6 +14,37 @@ SCHEMA_VERSION = 1
 SNAPSHOT_FILENAMES = ("auto_trade_positions_a.json", "auto_trade_positions_b.json")
 
 
+class ObserverSnapshot:
+    """One observer reading: the account state plus a reference to the reading.
+
+    The reference is what makes a verification result traceable after the fact,
+    so a verified outcome can be tied back to the exact snapshots that produced
+    it instead of to an unverifiable "it looked fine".
+    """
+
+    def __init__(
+        self,
+        sequence: int,
+        written_at: datetime,
+        account: int | None,
+        server: str | None,
+        positions: tuple[PositionSnapshot, ...],
+    ) -> None:
+        self.sequence = sequence
+        self.written_at = written_at
+        self.account = account
+        self.server = server
+        self.positions = positions
+
+    @property
+    def reference(self) -> str:
+        return (
+            f"sequence={self.sequence} written_at={self.written_at.isoformat()} "
+            f"account={self.account} server={self.server} "
+            f"positions={len(self.positions)}"
+        )
+
+
 class MT5FilePositionSnapshotProvider:
     """Reads the read-only snapshot written by the MT5 position observer service.
 
@@ -36,7 +67,7 @@ class MT5FilePositionSnapshotProvider:
         self.max_age = max_age
         self.clock = clock
 
-    def positions(self) -> tuple[PositionSnapshot, ...]:
+    def snapshot(self) -> ObserverSnapshot:
         path, document = self._load()
         written_at = self._written_at(document, path)
         if written_at is None:
@@ -53,9 +84,18 @@ class MT5FilePositionSnapshotProvider:
         raw_positions = document.get("positions")
         if not isinstance(raw_positions, list):
             raise PositionSnapshotUnavailable("observer snapshot has no positions list")
-        return tuple(
-            self._parse_position(entry) for entry in raw_positions
+        account = document.get("account")
+        server = document.get("server")
+        return ObserverSnapshot(
+            sequence=_sequence(document),
+            written_at=written_at,
+            account=account if isinstance(account, int) else None,
+            server=server if isinstance(server, str) else None,
+            positions=tuple(self._parse_position(entry) for entry in raw_positions),
         )
+
+    def positions(self) -> tuple[PositionSnapshot, ...]:
+        return self.snapshot().positions
 
     def _load(self) -> tuple[Path, dict[str, Any]]:
         candidates = [self.directory / name for name in SNAPSHOT_FILENAMES]

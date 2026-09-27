@@ -5,7 +5,7 @@ from pathlib import Path
 
 from auto_trade.application.ledger import JsonExecutionLedger
 from auto_trade.domain.enums import ExecutionStatus
-from auto_trade.domain.models import ExecutionResult
+from auto_trade.domain.models import ExecutionResult, VerificationEvidence
 
 
 def test_ledger_persists_attempt_and_result(tmp_path: Path) -> None:
@@ -25,6 +25,50 @@ def test_ledger_persists_attempt_and_result(tmp_path: Path) -> None:
     second = JsonExecutionLedger(path)
     assert second.contains("signal-1")
     assert second.pending() == ()
+
+
+def test_ledger_persists_verification_evidence_across_restart(tmp_path: Path) -> None:
+    path = tmp_path / "idempotency.json"
+    evidence = VerificationEvidence(
+        baseline="sequence=10 positions=0",
+        observed="sequence=11 positions=1",
+        position_id="555",
+    )
+    JsonExecutionLedger(path).record_result(
+        ExecutionResult(
+            "execution-1",
+            "signal-evidence",
+            ExecutionStatus.ACCEPTED,
+            "SUCCESS",
+            "verified",
+            "555",
+            None,
+            evidence,
+        )
+    )
+
+    stored = JsonExecutionLedger(path).records()[0]
+    assert stored["order_reference"] == "555"
+    assert stored["evidence"] == {
+        "baseline": "sequence=10 positions=0",
+        "observed": "sequence=11 positions=1",
+        "position_id": "555",
+    }
+
+
+def test_ledger_records_no_evidence_when_none_was_produced(tmp_path: Path) -> None:
+    path = tmp_path / "idempotency.json"
+    JsonExecutionLedger(path).record_result(
+        ExecutionResult(
+            "execution-1",
+            "signal-unknown",
+            ExecutionStatus.UNKNOWN,
+            "VERIFICATION_FAILED",
+            "baseline unavailable",
+        )
+    )
+
+    assert JsonExecutionLedger(path).records()[0]["evidence"] is None
 
 
 def test_ledger_keeps_requested_attempt_after_restart(tmp_path: Path) -> None:

@@ -11,8 +11,8 @@ Verification is independent of the UI action that initiated an order. A button c
 ## Implemented observation path
 
 `MT5FilePositionSnapshotProvider` reads the JSON snapshot published by the read-only
-MT5 Service `AutoTradePositionObserver`. This is the approved independent observation
-path: the service performs no trade operation, so the snapshot reflects terminal state
+MT5 program `AutoTradePositionObserver`. This is the approved independent observation
+path: the program performs no trade operation, so the snapshot reflects terminal state
 rather than the outcome of the request that is being verified.
 
 It fails closed on a missing, unreadable, truncated, unknown-schema, incomplete, or
@@ -21,11 +21,23 @@ and records a baseline failure as an error rather than as an empty account. Only
 one new matching position yields `ACCEPTED`; every other outcome, including a provider
 failure, yields `UNKNOWN`. See [POSITION_OBSERVER.md](POSITION_OBSERVER.md).
 
-## Remaining requirement
+## Traceability
 
-A verified result includes the position identifier and the before/after snapshot
-reference in the audit record. Live execution stays blocked until that audit linkage and
-a controlled demo order have both been exercised end to end.
+A verified result is only meaningful if it can be traced back to the account state that
+was observed. `VerificationEvidence` carries both snapshot references into
+`ExecutionResult`, and from there into the audit record and the execution ledger:
+
+```json
+"evidence": {
+  "baseline": "sequence=147 written_at=2026-09-27T06:37:04+00:00 account=53145727 server=Alpari-MT5-Demo positions=1",
+  "observed": "sequence=149 written_at=2026-09-27T06:37:06+00:00 account=53145727 server=Alpari-MT5-Demo positions=1",
+  "position_id": "382363348"
+}
+```
+
+`UNKNOWN` outcomes also record the observed reference, so a failure can be investigated
+rather than merely counted. The ledger copy is what makes this survive a restart, which
+is what `auto-trade recovery` reads.
 
 ## Status meanings
 

@@ -53,6 +53,7 @@ class JsonExecutionLedger:
                 "state": result.state,
                 "message": result.message,
                 "order_reference": result.order_reference,
+                "evidence": result.evidence.to_dict() if result.evidence else None,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
             self._write()

@@ -243,6 +243,36 @@ class VerificationOutcome:
         self.position_id = position_id
 
 
+class VerificationEvidence:
+    """The independently observed snapshots behind a verification outcome.
+
+    A verified result is only meaningful if it can be traced back to the exact
+    account state that was observed before and after the action, so both
+    snapshot references are carried into the result and the audit record.
+    """
+
+    def __init__(
+        self,
+        baseline: str,
+        observed: str,
+        position_id: str | None = None,
+    ) -> None:
+        if not baseline.strip():
+            raise ValueError("baseline reference is required")
+        if not observed.strip():
+            raise ValueError("observed reference is required")
+        self.baseline = baseline
+        self.observed = observed
+        self.position_id = position_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "baseline": self.baseline,
+            "observed": self.observed,
+            "position_id": self.position_id,
+        }
+
+
 class ExecutionResult:
     def __init__(
         self,
@@ -253,6 +283,7 @@ class ExecutionResult:
         message: str,
         order_reference: str | None = None,
         error: str | None = None,
+        evidence: VerificationEvidence | None = None,
     ) -> None:
         self.execution_id = execution_id
         self.signal_id = signal_id
@@ -261,6 +292,7 @@ class ExecutionResult:
         self.message = message
         self.order_reference = order_reference
         self.error = error
+        self.evidence = evidence
 
 
 class AuditEvent:
@@ -276,6 +308,7 @@ class AuditEvent:
         volume: Decimal | None = None,
         state: str | None = None,
         error: str | None = None,
+        evidence: VerificationEvidence | None = None,
     ) -> None:
         self.timestamp = utc_now().isoformat().replace("+00:00", "Z")
         self.component = component
@@ -288,6 +321,7 @@ class AuditEvent:
         self.volume = str(volume) if volume is not None else None
         self.state = state
         self.error = error
+        self.evidence = evidence
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -302,4 +336,5 @@ class AuditEvent:
             "state": self.state,
             "message": self.message,
             "error": self.error,
+            "evidence": self.evidence.to_dict() if self.evidence else None,
         }
