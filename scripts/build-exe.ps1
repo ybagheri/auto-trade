@@ -45,6 +45,9 @@ if (-not (Test-Path -LiteralPath $exe)) {
 Write-Host "Copying the operator-facing files"
 $payload = Join-Path $root "dist\auto-trade"
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination $payload -Force
+Copy-Item -LiteralPath (Join-Path $root "README.fa.md") -Destination $payload -Force
+Copy-Item -LiteralPath (Join-Path $root "ROADMAP.md") -Destination $payload -Force
+Copy-Item -LiteralPath (Join-Path $root "CONTRIBUTING.md") -Destination $payload -Force
 Copy-Item -LiteralPath (Join-Path $root "LICENSE") -Destination $payload -Force
 Copy-Item -LiteralPath (Join-Path $root "docs") -Destination $payload -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $root "mql5") -Destination $payload -Recurse -Force

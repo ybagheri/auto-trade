@@ -53,6 +53,14 @@ def test_build_script_runs_the_checks_before_packaging() -> None:
     assert "diagnostics-bundle" in script
 
 
+def test_the_build_ships_the_files_the_shipped_readme_links_to() -> None:
+    """A README in the install folder with dead links is worse than no README."""
+    script = read(BUILD_SCRIPT)
+
+    for name in ("README.md", "README.fa.md", "ROADMAP.md", "CONTRIBUTING.md", "LICENSE"):
+        assert name in script, f"{name} is not copied into the build folder"
+
+
 def test_installer_script_refuses_to_package_a_missing_build() -> None:
     assert "build-exe.ps1" in read(INSTALLER_SCRIPT)
 
