@@ -112,8 +112,14 @@ class ExecutionWorkflow:
             try:
                 adapter_result = self.adapter.execute_order(request)
             except Exception as exc:
+                # The final control may already have been used at this point, so
+                # the outcome is unknown rather than refused, and the reason has
+                # to reach the operator instead of a fixed sentence.
                 machine.transition(ExecutionState.UNKNOWN_EXECUTION)
-                raise ExecutionUnknownError("execution outcome is unknown") from exc
+                raise ExecutionUnknownError(
+                    "the final control was used or attempted and the outcome is "
+                    f"unknown: {type(exc).__name__}: {exc}"
+                ) from exc
             if adapter_result.status is ExecutionStatus.REJECTED:
                 machine.transition(ExecutionState.ORDER_REJECTED)
                 return self._result(
@@ -203,6 +209,17 @@ class ExecutionWorkflow:
                 ExecutionStatus.UNKNOWN,
                 ExecutionState.UNKNOWN_EXECUTION,
                 str(exc),
+            )
+        except ExecutionUnknownError as exc:
+            # The final control was already used or attempted, so this is never a
+            # refusal. It stays UNKNOWN until independent observation proves it.
+            return self._result(
+                execution_id,
+                signal,
+                ExecutionStatus.UNKNOWN,
+                ExecutionState.UNKNOWN_EXECUTION,
+                str(exc),
+                error=str(exc),
             )
         except Exception as exc:
             self._record(execution_id, signal, "error", str(exc), error=str(exc))

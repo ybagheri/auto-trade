@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import re
 import time
+from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,33 @@ from .execution import (
     wait_for_dialog_to_close,
 )
 from .positions_file import MT5FilePositionSnapshotProvider
+
+_ELEMENT_GONE: tuple[type[BaseException], ...] | None = None
+
+
+def _element_gone() -> tuple[type[BaseException], ...]:
+    """The errors pywinauto raises once an element has been destroyed.
+
+    MT5 destroys the order dialog itself the moment an order is sent, so every
+    read of that dialog after the click can hit one of these. Resolved at
+    runtime, like pywinauto itself, so this module still imports on a machine
+    without the automation extras.
+    """
+    global _ELEMENT_GONE
+    if _ELEMENT_GONE is None:
+        names = ("ElementNotAvailable", "InvalidElementHandle", "ElementNotVisible")
+        try:
+            library: Any = importlib.import_module("pywinauto")
+        except ImportError:
+            _ELEMENT_GONE = ()
+        else:
+            _ELEMENT_GONE = tuple(
+                error
+                for error in (getattr(library, name, None) for name in names)
+                if isinstance(error, type) and issubclass(error, BaseException)
+            )
+    return _ELEMENT_GONE
+
 
 
 class MT5WindowManager:
@@ -66,17 +94,19 @@ class MT5WindowManager:
 
     @property
     def title(self) -> str:
-        if self._window is None:
+        window = self._window
+        if window is None:
             raise AutomationError("MT5 window is not connected")
-        return str(self._window.window_text())
+        return str(self._guard("MT5 window", lambda: window.window_text()))
 
     def contains_symbol(self, symbol: str) -> bool:
         match = re.search(r"\[([A-Za-z0-9._#]+),", self.title)
         return match is not None and match.group(1).upper() == symbol.upper()
 
     def open_order_dialog(self, timeout_seconds: float = 5.0) -> Any:
-        if self._order_dialog is not None:
+        if self._order_dialog is not None and self._is_alive(self._order_dialog):
             return self._order_dialog
+        self._order_dialog = None
         if self._window is None:
             raise AutomationError("MT5 window is not connected")
         menu_items = [
@@ -108,11 +138,16 @@ class MT5WindowManager:
         raise AutomationError("MT5 order dialog did not become ready")
 
     def close_order_dialog(self, timeout_seconds: float = 5.0) -> None:
-        if self._order_dialog is None:
+        dialog = self._order_dialog
+        if dialog is None:
+            return
+        if not self._is_alive(dialog):
+            # MT5 destroyed it, which is the outcome this method waits for.
+            self._order_dialog = None
             return
         close_buttons = [
             control
-            for control in self._order_dialog.descendants()
+            for control in dialog.descendants()
             if control.element_info.control_type == "Button"
             and control.window_text() == "Close"
         ]
@@ -129,12 +164,15 @@ class MT5WindowManager:
 
     def select_market_execution(self) -> None:
         dialog = self.open_order_dialog()
-        buttons = [
-            control
-            for control in dialog.descendants()
-            if control.element_info.control_type == "Button"
-            and control.window_text() == "Market Execution"
-        ]
+        buttons = self._guard(
+            "order dialog",
+            lambda: [
+                control
+                for control in dialog.descendants()
+                if control.element_info.control_type == "Button"
+                and control.window_text() == "Market Execution"
+            ],
+        )
         if not buttons:
             raise AutomationError("Market Execution control was not found")
         buttons[0].click_input()
@@ -156,6 +194,28 @@ class MT5WindowManager:
             raise AutomationError(f"field {automation_id} cannot be read") from exc
 
     @staticmethod
+    def _is_alive(element: Any) -> bool:
+        """Whether an element can still be read, i.e. MT5 has not destroyed it."""
+        exists = getattr(element, "exists", None)
+        try:
+            if callable(exists) and not exists():
+                return False
+            element.descendants()
+        except _element_gone():
+            return False
+        except AutomationError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise AutomationError(f"the MT5 element could not be read: {exc}") from exc
+        return True
+
+    def _guard(self, description: str, call: Callable[[], Any]) -> Any:
+        try:
+            return call()
+        except _element_gone() as exc:
+            raise AutomationError(f"{description} no longer exists") from exc
+
+    @staticmethod
     def _find_edit(dialog: Any, automation_id: str) -> Any:
         for control in dialog.descendants():
             if (
@@ -168,11 +228,14 @@ class MT5WindowManager:
     def _is_order_dialog_open(self) -> bool:
         if self._window is None:
             return False
-        return any(
-            control.element_info.control_type == "Window"
-            and control.window_text().startswith("Order:")
-            for control in self._window.descendants()
-        )
+        try:
+            return any(
+                control.element_info.control_type == "Window"
+                and control.window_text().startswith("Order:")
+                for control in self._window.descendants()
+            )
+        except _element_gone():
+            return False
 
 
 class MT5DesktopAdapter:
@@ -307,6 +370,11 @@ class MT5DesktopAdapter:
         Only exactly one new position matching symbol, side and volume is accepted.
         The baseline and observed references travel with the result so a verified
         outcome can be traced back to the exact readings that produced it.
+
+        A single unreadable snapshot is not a failure. MT5 writes the snapshot
+        while it is busy submitting an order, so a read can land on a file being
+        rewritten. The loop keeps polling until its deadline and only then fails
+        closed, with the last observation error as the reason.
         """
         if self._baseline is None:
             detail = self._baseline_error or "no position baseline was captured"
@@ -314,11 +382,17 @@ class MT5DesktopAdapter:
         deadline = time.monotonic() + self.verification_timeout_seconds
         last_evidence: VerificationEvidence | None = None
         last_message = "no position observation completed"
+        last_error = ""
         while True:
             try:
                 after = self.capture_positions()
             except PositionSnapshotUnavailable as exc:
-                return self._unknown(request, f"position observation unavailable: {exc}")
+                last_error = f"position observation unavailable: {exc}"
+                if time.monotonic() >= deadline:
+                    return self._unknown(request, last_error, last_evidence)
+                time.sleep(0.25)
+                continue
+            last_error = ""
             outcome = PositionChangeVerifier().verify(request, self._baseline, after)
             last_message = outcome.message
             last_evidence = VerificationEvidence(

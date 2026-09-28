@@ -76,11 +76,15 @@
 - [x] Add controlled UI tests.
 - [x] Perform demo connection, window, symbol, and dry-run checks.
 - [x] Provide a read-only MQL5 indicator position observation method.
-- [ ] Observe a demo position opened by hand and confirm verification accepts it.
-  - Requires an open chart with the indicator attached; see row 5 of
-      [demo validation](docs/MT5_DEMO_VALIDATION.md).
-- [ ] Perform actual demo order only after explicit verification criteria pass.
-  - Blocked by the two rows above; see row 6.
+- [x] Observe a demo position and confirm verification accepts it.
+  - Accepted on 2026-09-28 with evidence on Alpari MT5 6184; the position the
+      guarded path created was observed independently. See
+      [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 5, 6, 6a.
+- [x] Perform actual demo order only after explicit verification criteria pass.
+  - The first attempt found three defects after the click, all fixed; the second
+      returned `ACCEPTED` with `order_reference` and evidence.
+- [ ] Reconcile an execution record an operator later proved, without editing the
+      ledger by hand. See the open `UNKNOWN` record in the demo validation record.
 
 ## Phase 9 — Packaging
 

@@ -10,7 +10,7 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 271 unit and integration tests passed.
+- **PASS — mocked:** 282 unit and integration tests passed.
 - **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
 - **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`, which is registered in the Navigator and attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live snapshot whose sequence advances and whose `complete` flag is true.
@@ -24,9 +24,11 @@ mypy src tests
 - **PASS — configuration wizard:** default handling, validation refusals, refusal to change a deliberate value, preservation of unmanaged keys, and `AUTO_TRADE_ENABLE_EXECUTION=false`.
 - **PASS — executable:** the Windows build runs `diagnostics`, `diagnostics-bundle`, `make-signal`, `dry-run --mock`, `configure`, and the dashboard.
 - **MANUAL — pipe and WebSocket sources end to end:** each was driven once from the command line against a local writer outside the test suite, and produced a pending signal file. No MT5 is involved in either.
+- **PASS — guarded demo order:** on Alpari MT5 6184, `execute --confirm-demo` for EURUSD BUY 0.01 returned `ACCEPTED` with `order_reference 382631622`, an empty baseline, and the observed position in the evidence. The first attempt returned `UNKNOWN` and produced three defects, each now covered by a regression test: a destroyed dialog read as live, one unreadable snapshot ending verification, and an unknown state that hid its cause.
+- **NOT RUN — real account:** no live or funded account was used at any point; every order above was on the demo account the title identifies.
 - **NOT RUN — installer:** `installer.iss` was never compiled; Inno Setup 6 is not installed here.
-- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA, and the chart context menu is not in the accessibility tree, so opening a chart and attaching the indicator are human actions. The snapshot read itself is confirmed; what is missing is a real position to accept.
-- **NOT RUN — real order:** no real BUY/SELL click or broker order was attempted.
+- **BLOCKED — position verification by hand:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA, and the chart context menu is not in the accessibility tree, so opening a chart and placing a position by hand are human actions. The equivalent observation path was proven by the guarded order instead.
+- **NOT RUN — closing a position:** `close_position` is deliberately unimplemented, so the demo position each test opened was closed by the operator.
 - **MANUAL TEST REQUIRED:** open one demo position by hand, confirm the snapshot reports it, then close it. [demo validation](MT5_DEMO_VALIDATION.md) holds the procedure and the record.
 
 ## Test layers

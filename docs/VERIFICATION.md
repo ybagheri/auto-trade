@@ -23,9 +23,11 @@ Every provider failure yields `UNKNOWN`.
 Measured on a real demo terminal: a snapshot from an earlier session was refused
 as stale rather than read as an empty account, and that snapshot carried the
 fields the verifier needs on this broker's build (`ticket`, `symbol`, `type`,
-`volume`). The remaining step, observing a snapshot written by the current
-indicator on a chart that is attached right now, is a human action recorded in
-[demo validation](MT5_DEMO_VALIDATION.md).
+`volume`). The first guarded order was placed and filled but reported `UNKNOWN`,
+because verification gave up on the first unreadable snapshot and the post-click
+dialog wait read a dialog MT5 had already destroyed. Verification now polls to its
+deadline, a destroyed dialog counts as closed, and the second guarded order was
+accepted with evidence. See [demo validation](MT5_DEMO_VALIDATION.md).
 
 A future independent observation method must be explicit, read-only, and approved by the operator. It must not be implemented as an order-placing program.
 

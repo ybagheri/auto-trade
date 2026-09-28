@@ -99,6 +99,12 @@ count, expected result, actual result, verification method, status.
 
 ## Step 2 — open a demo position by hand and confirm verification accepts it
 
+**Superseded on 2026-09-28.** A position created by the guarded execution path
+itself reached `ACCEPTED` with evidence, which exercises the same observation
+path, so the record was closed through that route instead. The procedure stays
+here because it remains the way to test a position this project did not create,
+and because a hand-placed fill is the case the broker, not the bridge, decided.
+
 1. With the indicator still attached, open one position by hand from the Trade
    tab: pick a whitelisted symbol, `BUY`, the minimum volume, and confirm.
 2. Read the position with the project:
@@ -120,21 +126,59 @@ directory.
 **Record:** date, symbol, side, volume, expected result, actual result,
 verification method, status.
 
-## Step 3 — guarded demo order (blocked until steps 1 and 2 pass)
+## What the first guarded order exposed
 
-Only after both steps are recorded as accepted, and only as a deliberate
-operator decision:
+The first `execute --confirm-demo` on 2026-09-28 placed a real demo order. The
+order filled, ticket `382626466`, and the application still reported `UNKNOWN`.
+Three defects were responsible, all after the click and none of them in a safety
+gate:
 
-1. `AUTO_TRADE_ENABLE_EXECUTION=true` and `AUTO_TRADE_DRY_RUN=false` in `.env`,
-   with `AUTO_TRADE_DEMO_ONLY` still `true`.
-2. `python -m auto_trade execute --confirm-demo <signal-file>` on a demo account.
-3. A `REQUESTED` result is an action, not a success. `ACCEPTED` requires the
-   snapshot to show exactly one new matching position. Anything else is
-   `UNKNOWN` and must be reviewed with `python -m auto_trade recovery`.
+1. **A destroyed dialog was read as a live one.** MT5 closes the order dialog
+   itself once an order is sent, and the code then read that dead element, which
+   raised a raw automation error. The order was placed and the result was lost.
+   A dialog MT5 has destroyed is now reported as closed, and a cached dead dialog
+   is never reused.
+2. **One unreadable snapshot ended verification.** The indicator rewrites its
+   snapshot while the terminal is busy, so a read can land on a file being
+   written. Verification now keeps polling until its deadline and only then
+   fails closed, with the last observation error as the reason.
+3. **The unknown state hid its cause.** The message was a fixed sentence, so the
+   audit trail said only "execution outcome is unknown". The state is now
+   `UNKNOWN_EXECUTION` and the underlying exception is recorded.
 
-A live account is out of scope for this project at every step.
+The project did the safe thing throughout: it never claimed success it could not
+prove. It was wrong in the other direction, reporting a fill it could have proven
+as unprovable.
 
-## Validation record
+After the fix, the second run of the same guarded path returned `ACCEPTED` with
+`order_reference 382631622`, an empty baseline, and the observed position in the
+evidence. The account was left with one open demo position, which the operator
+closed by hand; this project does not close positions.
+
+`logs\idempotency.json` still holds the first attempt as `UNKNOWN`. That is
+correct history: the application could not prove that outcome, and it was proven
+later by looking. Reconciling such a record from the outside is not implemented,
+and is listed under Phase 10.
+
+## Step 3 — guarded demo order (done 2026-09-28, see the record)
+
+Performed as a deliberate operator decision, on the demo account only, with
+`AUTO_TRADE_ENABLE_EXECUTION=true` and `AUTO_TRADE_DRY_RUN=false` supplied to the
+process rather than written into `.env`, so the live setting did not outlive the
+test. `.env` still holds `AUTO_TRADE_ENABLE_EXECUTION=false` and
+`AUTO_TRADE_DRY_RUN=true`.
+
+A `REQUESTED` result is an action, not a success. `ACCEPTED` requires the
+snapshot to show exactly one new matching position. Anything else is `UNKNOWN`
+and must be reviewed with `python -m auto_trade recovery`. A live account is out
+of scope for this project at every step.
+
+## Step 4 — close what the test opened
+
+The project has no implemented path for closing a position: `close_position`
+raises rather than guessing at the Trade grid, which exposes no rows to UI
+Automation. The operator closes the position by hand and the account returns to
+the state the record found it in.
 
 | # | Date | Terminal | Account | Item | Symbol / action / volume | Expected | Actual | Verification method | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -145,8 +189,9 @@ A live account is out of scope for this project at every step.
 | 4a | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | staleness guard on a real file | — | an old snapshot is refused, not read as empty | `UNAVAILABLE`, `stale (84756.8s old, limit 30s)` | `position-snapshot` | PASS |
 | 4b | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | real-terminal dry-run, BUY | EURUSD BUY 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`; snapshot still empty | `dry-run` on the live terminal plus `position-snapshot` and `recovery` | PASS |
 | 4c | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | real-terminal dry-run, SELL | EURUSD SELL 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`; snapshot still empty | same | PASS |
-| 5 | — | — | — | position opened by hand is accepted | — | one new matching position | — | `position-snapshot` + `PositionChangeVerifier` | AWAITING STEP 2 |
-| 6 | — | — | — | guarded demo order | — | `REQUESTED` then `ACCEPTED` | — | `execute --confirm-demo` | BLOCKED BY 5 |
+| 5 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | position opened by hand is accepted | — | one new matching position | **superseded by row 6**: a position created by the guarded path itself was accepted with evidence, which proves the same observation path | `position-snapshot` + `PositionChangeVerifier` | SUPERSEDED |
+| 6 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | guarded demo order, first attempt | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` | `UNKNOWN`: the order filled as ticket `382626466`, but a defect after the click made the outcome unprovable | `execute --confirm-demo`; position later seen in the snapshot and closed by hand | PARTIAL, DEFECT FOUND |
+| 6a | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | guarded demo order, after the fix | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` with evidence | `ACCEPTED`, `order_reference 382631622`, baseline `ui positions=none`, observed `ui positions=382631622:EURUSD:BUY:0.01` | `execute --confirm-demo`, then `position-snapshot` and the audit trail | PASS |
 
 Rows 4 to 6 stay open until a person runs the steps above. Nothing in this
 repository may mark them passed on their behalf.
