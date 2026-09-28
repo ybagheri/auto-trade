@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from ..adapters.terminal import DryRunTerminalAdapter
+from ..application.kill_switch import FileKillSwitch
 from ..application.ledger import RECONCILED, JsonExecutionLedger, LedgerError
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
@@ -27,6 +28,16 @@ def _parser() -> argparse.ArgumentParser:
     subparsers.add_parser("status", help="show configured safety status")
     subparsers.add_parser("diagnostics", help="show environment and MT5 diagnostics")
     subparsers.add_parser("recovery", help="review pending and unknown execution records")
+    metrics = subparsers.add_parser(
+        "metrics",
+        help="show execution counters and phase latency derived from the audit log",
+    )
+    metrics.add_argument(
+        "--tail",
+        type=int,
+        default=2000,
+        help="how many trailing audit events to summarize; defaults to 2000",
+    )
     reconcile = subparsers.add_parser(
         "reconcile",
         help="settle an attempt this application could not prove, on an operator's word",
@@ -153,6 +164,23 @@ def _parser() -> argparse.ArgumentParser:
 
 def _signal(path: Path) -> TradeSignal:
     return TradeSignal.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _metrics(config: AppConfig, tail: int) -> dict[str, object]:
+    """Summarize the audit log through the same reader the dashboard uses.
+
+    Reusing `StatusReporter.logs` keeps one definition of the log tail, so the
+    command and the dashboard can never disagree about which events a summary
+    covers.
+    """
+    from ..interfaces.status import StatusReporter
+
+    reporter = StatusReporter(
+        config=config,
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+        kill_switch=FileKillSwitch(config.log_directory / "KILL_SWITCH"),
+    )
+    return reporter.metrics(tail)
 
 
 def _diagnostics(config: AppConfig) -> dict[str, object]:
@@ -674,6 +702,9 @@ def main(argv: list[str] | None = None) -> int:
             ],
         }
         print(json.dumps(review, indent=2, default=str))
+        return 0
+    if args.command == "metrics":
+        print(json.dumps(_metrics(config, args.tail), indent=2, default=str))
         return 0
     if args.command == "reconcile":
         ledger = JsonExecutionLedger(config.log_directory / "idempotency.json")

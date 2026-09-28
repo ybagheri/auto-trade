@@ -103,6 +103,15 @@
   </section>
 
   <section class="wide">
+    <h2>Timing</h2>
+    <table>
+      <thead><tr><th>Phase</th><th>Runs</th><th>Median</th><th>Slowest</th></tr></thead>
+      <tbody id="latency"></tbody>
+    </table>
+    <p class="muted" id="latency-note" style="margin:10px 0 0"></p>
+  </section>
+
+  <section class="wide">
     <h2>Audit log</h2>
     <pre id="logs">loading…</pre>
   </section>
@@ -141,9 +150,10 @@ async function post(path, token) {
 
 async function refresh() {
   try {
-    const [status, risk, positions, signals, executions, logs] = await Promise.all([
+    const [status, risk, positions, signals, executions, logs, metrics] = await Promise.all([
       get("/api/status"), get("/api/risk"), get("/api/positions"),
       get("/api/signals"), get("/api/executions"), get("/api/logs?tail=120"),
+      get("/api/metrics"),
     ]);
 
     pill("dryrun", status.safety.dry_run ? "DRY-RUN" : "LIVE",
@@ -205,6 +215,35 @@ async function refresh() {
     $("logs").textContent = logs.events.length
       ? logs.events.map((e) => JSON.stringify(e)).join("\n")
       : "no audit events yet";
+
+    // A phase with no measurement shows a dash. It never shows 0 ms, because a
+    // dry run never clicked and a zero there would read as an instant trade.
+    const PHASES = [
+      ["validation", "validation"],
+      ["preparation", "preparing the order dialog"],
+      ["click_to_detection", "click to the dialog closing"],
+      ["click_to_outcome", "click to a reported outcome"],
+      ["total", "whole run"],
+    ];
+    $("latency").innerHTML = PHASES.map(([key, label]) => {
+      const entry = metrics.latency_ms[key] || {};
+      const cell = (value) => value === null || value === undefined
+        ? `<span class="muted">—</span>` : escapeHtml(value + " ms");
+      return `<tr><th>${escapeHtml(label)}</th><td>${entry.count ?? 0}</td>` +
+        `<td>${cell(entry.p50_ms)}</td><td>${cell(entry.max_ms)}</td></tr>`;
+    }).join("");
+
+    const unresolved = metrics.counters.unresolved_attempts;
+    const notes = [
+      `${metrics.executions} run(s) across ${metrics.events} audit event(s).`,
+      "Times describe this application only; the broker decides when an order fills.",
+      metrics.truncated ? "Covers only the tail of the audit log." : "",
+      unresolved
+        ? unresolved + " attempt(s) used a final control and recorded no result; " +
+          "review them with `recovery`."
+        : "",
+    ].filter(Boolean).join(" ");
+    $("latency-note").textContent = notes;
   } catch (error) {
     $("stamp").textContent = "refresh failed: " + error.message;
   }

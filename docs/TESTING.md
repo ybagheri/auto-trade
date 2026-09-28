@@ -10,7 +10,8 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 333 unit and integration tests passed.
+- **PASS — mocked:** 355 unit and integration tests passed.
+- **PASS — metrics and latency:** phase latency and counters are derived from the audit log rather than collected in memory, so a run that crashed between the click and the observation is still measured. Covered: each phase measured between its two recorded states, an unmeasured phase reporting `null` rather than zero, results counted by settled state, an unresolved attempt identified, a truncated log saying so, an unparseable line counted rather than dropped, and a backwards clock reported instead of producing a negative duration. Verified end to end through a real `AuditLogger`, a real `ExecutionWorkflow`, and the shipped `metrics` command.
 - **PASS — crash between the click and the observation:** a process that dies after the final control is used leaves the durable record `REQUESTED` with no result and no `order_reference`; a restarted process refuses the same signal as a duplicate without opening the order dialog; the refused retry cannot overwrite the pending record; `recovery` lists it for review and only `reconcile` settles it; and a fill that was observed but whose result never reached disk is still not recorded as `ACCEPTED`. A snapshot written before a terminal restart is refused as stale rather than read as the current account.
 - **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
 - **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`, which is registered in the Navigator and attached to the `EURUSD,M5` chart.

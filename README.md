@@ -26,6 +26,8 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
 - Position-change verification abstraction with a fail-closed read-only indicator snapshot provider and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
+- Counters and per-phase latency derived from that audit log, so a run that
+  crashed is still measured. See [metrics](docs/METRICS.md).
 - Local read-only status dashboard with a durable, token-guarded emergency stop.
 - CLI diagnostics, a zipped diagnostics bundle, a configuration wizard, and
   non-executing dry-run processing.
@@ -115,6 +117,7 @@ python -m auto_trade execute --confirm-demo <signal-file>
 python -m auto_trade close-position <ticket> --confirm-demo
 python -m auto_trade recovery
 python -m auto_trade reconcile <signal-id> --observed "what you saw"
+python -m auto_trade metrics
 python -m auto_trade evaluate --symbol BITCOIN
 python -m auto_trade fetch-signal
 python -m auto_trade diagnostics-bundle
@@ -225,8 +228,9 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 333 unit and integration tests executed.
+- **PASS — mocked:** 355 unit and integration tests executed.
 - **PASS — crash between the click and the observation:** the durable record stays pending, a restarted process refuses the same signal without touching the terminal, and only an operator can settle it. See [recovery](docs/RECOVERY.md).
+- **PASS — metrics and latency:** counters and per-phase timing, derived from the audit log so a crashed run is still measured. An unmeasured phase reports nothing rather than a zero. See [metrics](docs/METRICS.md).
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
 - **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position.
@@ -259,6 +263,7 @@ Current automated status:
 - [Execution](docs/EXECUTION.md)
 - [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
 - [Recovery](docs/RECOVERY.md)
+- [Metrics](docs/METRICS.md)
 - [MT5 demo validation](docs/MT5_DEMO_VALIDATION.md)
 - [Packaging](docs/PACKAGING.md)
 - [Persian documentation](README.fa.md)

@@ -22,6 +22,7 @@ topic:
 | `terminal.json` | the outcome of terminal discovery, or the reason it failed |
 | `positions.json` | the position observation, or why it was unavailable |
 | `executions.json` | pending and unknown ledger records, and a count |
+| `metrics.json` | counters and per-phase latency, derived from the same audit tail, and marked truncated when the tail is short |
 | `signals.json` | pending signal files, including the unreadable ones |
 | `kill-switch.json` | whether the durable stop is engaged and why |
 | `audit-log.json` | the tail of `logs\audit.log` |

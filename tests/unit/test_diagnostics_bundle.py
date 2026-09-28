@@ -96,11 +96,54 @@ def test_bundle_contains_every_expected_section(tmp_path: Path) -> None:
         "kill-switch.json",
         "positions.json",
         "executions.json",
+        "metrics.json",
         "signals.json",
         "audit-log.json",
     }
     assert entries["manifest.json"]["contains_no_credentials"] is True
     assert entries["environment.json"]["working_directory"] == str(Path.cwd())
+
+
+def test_bundle_metrics_describe_only_the_events_in_the_log_tail(tmp_path: Path) -> None:
+    """The summary is derived from the tail, and says so when the tail is short.
+
+    A latency figure computed from a truncated log would otherwise look exactly
+    like one computed from the whole history.
+    """
+    logs = tmp_path / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    events = [
+        {
+            "timestamp": f"2026-09-28T09:00:0{index}Z",
+            "component": "execution",
+            "event_type": "state",
+            "signal_id": "signal-1",
+            "execution_id": "exec-1",
+            "state": name,
+            "message": name,
+        }
+        for index, name in enumerate(
+            ["SIGNAL_RECEIVED", "VALIDATING", "VALIDATED", "ORDER_READY"]
+        )
+    ]
+    (logs / "audit.log").write_text(
+        "\n".join(json.dumps(event) for event in events), encoding="utf-8"
+    )
+    target = bundle_for(tmp_path, audit_tail=2).export(tmp_path / "bundle.zip")
+
+    metrics = read(target)["metrics.json"]
+    # Only the two trailing events were read, so only one execution is counted.
+    assert metrics["truncated"] is True
+    assert metrics["events"] == 2
+    assert metrics["executions"] == 1
+    # VALIDATED and ORDER_READY are the two events read, so the preparation phase
+    # between them is genuinely measured.
+    assert metrics["latency_ms"]["preparation"]["measured"] is True
+    assert metrics["latency_ms"]["preparation"]["max_ms"] == 1000.0
+    # Nothing about a final control is in the tail, so no click phase is claimed.
+    assert metrics["latency_ms"]["click_to_outcome"]["measured"] is False
+    assert metrics["latency_ms"]["total"]["measured"] is False
+    assert metrics["counters"]["unresolved_attempts"] == 0
 
 
 def test_bundle_never_writes_the_configured_token(tmp_path: Path) -> None:

@@ -124,6 +124,12 @@ compiled. See [packaging](docs/PACKAGING.md).
   - Still open: the same sequence against a real terminal restart, which needs
       a person to kill the terminal mid-order.
 - [ ] Structured metrics and latency observability.
+  - Done: counters and per-phase latency are derived from the audit log rather
+      than collected in memory, so a crashed run is still measured. Exposed as
+      `metrics`, `GET /api/metrics`, and the bundle's `metrics.json`. An
+      unmeasured phase reports `null`, never zero. See [metrics](docs/METRICS.md).
+  - Still open: no alert or threshold, deliberately. A latency figure must never
+      be able to look like a verdict on an outcome.
 - [ ] Security review and dependency review.
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.
 - [ ] Complete bilingual documentation synchronization.

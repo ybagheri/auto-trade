@@ -15,6 +15,7 @@ from ..domain.models import ExecutionPolicy, RiskLimits, TerminalProfile, utc_no
 from ..domain.protocols import KillSwitch, PositionSnapshotProvider, TerminalDiscovery
 from .kill_switch import FileKillSwitch
 from .ledger import ExecutionLedger
+from .metrics import summarize
 
 BUNDLE_VERSION = 1
 MAX_SIGNAL_FILES = 50
@@ -71,6 +72,7 @@ class DiagnosticsBundle:
     sections: dict[str, Any] = field(default_factory=dict)
 
     def collect(self) -> dict[str, Any]:
+        audit_log = self._audit_log()
         collected: dict[str, Any] = {
             "environment": self._environment(),
             "configuration": self._configuration(),
@@ -78,8 +80,14 @@ class DiagnosticsBundle:
             "kill-switch": self._kill_switch(),
             "positions": self._positions(),
             "executions": self._executions(),
+            # Derived from the same events, so a report cannot show a latency
+            # summary for a window the log tail does not actually cover.
+            "metrics": summarize(
+                [event for event in audit_log.get("events", []) if isinstance(event, dict)],
+                truncated=bool(audit_log.get("truncated")),
+            ).to_dict(),
             "signals": self._signals(),
-            "audit-log": self._audit_log(),
+            "audit-log": audit_log,
         }
         self.sections = collected
         return collected

@@ -166,6 +166,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if route == "/api/executions":
             self._send_json(reporter.executions())
             return
+        if route == "/api/metrics":
+            tail = (query.get("tail") or ["2000"])[0]
+            try:
+                self._send_json(reporter.metrics(int(tail)))
+            except ValueError:
+                self._send_json({"error": "tail must be an integer"}, HTTPStatus.BAD_REQUEST)
+            return
         if route == "/api/logs":
             tail = (query.get("tail") or ["200"])[0]
             try:

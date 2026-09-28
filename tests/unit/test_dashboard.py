@@ -17,7 +17,7 @@ from auto_trade.application.ledger import JsonExecutionLedger
 from auto_trade.domain.models import ExecutionPolicy, RiskLimits
 from auto_trade.infrastructure.configuration import AppConfig
 from auto_trade.interfaces import StatusReporter, build_server, is_loopback
-from auto_trade.interfaces.server import DashboardServer, kill_switch_path
+from auto_trade.interfaces.server import DashboardServer, kill_switch_path, render_page
 
 TOKEN = "test-token-123"
 NOW = datetime(2026, 9, 26, 12, 0, 0, tzinfo=UTC)
@@ -156,6 +156,106 @@ def test_status_endpoint_reports_safety_flags(server: DashboardServer) -> None:
 def test_risk_endpoint_lists_whitelist(server: DashboardServer) -> None:
     _, body = request(server, "/api/risk")
     assert json.loads(body)["allowed_symbols"] == ["BITCOIN"]
+
+
+def test_metrics_endpoint_reports_nothing_measured_without_a_log(
+    server: DashboardServer,
+) -> None:
+    """An empty log is not a healthy log, so no phase may claim to be measured."""
+    status, body = request(server, "/api/metrics")
+    payload = json.loads(body)
+    assert status == HTTPStatus.OK
+    assert payload["events"] == 0
+    assert all(not entry["measured"] for entry in payload["latency_ms"].values())
+
+
+def test_metrics_endpoint_counts_an_unresolved_attempt(
+    server: DashboardServer, log_dir: Path
+) -> None:
+    """A crash between the click and the observation is visible on the dashboard.
+
+    The audit tail is read back from disk, so the count outlives the process that
+    produced it, which is the whole reason it is not held in memory.
+    """
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "audit.log").write_text(
+        "\n".join(
+            json.dumps(event)
+            for event in (
+                {
+                    "timestamp": "2026-09-28T09:00:00Z",
+                    "component": "execution",
+                    "event_type": "state",
+                    "signal_id": "signal-1",
+                    "execution_id": "exec-1",
+                    "state": "EXECUTING",
+                    "message": "EXECUTING",
+                },
+                {
+                    "timestamp": "2026-09-28T09:00:01Z",
+                    "component": "execution",
+                    "event_type": "state",
+                    "signal_id": "signal-1",
+                    "execution_id": "exec-1",
+                    "state": "VERIFYING",
+                    "message": "VERIFYING",
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    _, body = request(server, "/api/metrics")
+    payload = json.loads(body)
+    assert payload["counters"]["unresolved_attempts"] == 1
+    assert payload["counters"]["unresolved_execution_ids"] == ["exec-1"]
+
+
+def test_metrics_endpoint_rejects_a_non_numeric_tail(server: DashboardServer) -> None:
+    status, body = request(server, "/api/metrics?tail=lots")
+    assert status == HTTPStatus.BAD_REQUEST
+    assert json.loads(body)["error"] == "tail must be an integer"
+
+
+def test_the_dashboard_never_renders_a_zero_for_an_unmeasured_phase(
+    server: DashboardServer, log_dir: Path
+) -> None:
+    """A dry run never clicked, so the click phases must render a dash, not 0 ms.
+
+    The rendered page is checked rather than the endpoint, because a zero here
+    would be read as an instant trade rather than as an absent measurement.
+    """
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "audit.log").write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "timestamp": f"2026-09-28T09:00:0{index}Z",
+                    "component": "execution",
+                    "event_type": "state",
+                    "signal_id": "signal-1",
+                    "execution_id": "exec-1",
+                    "state": name,
+                    "message": name,
+                }
+            )
+            for index, name in enumerate(
+                ["SIGNAL_RECEIVED", "VALIDATED", "ORDER_READY", "DRY_RUN_COMPLETED"]
+            )
+        ),
+        encoding="utf-8",
+    )
+    _, body = request(server, "/api/metrics")
+    payload = json.loads(body)
+
+    assert payload["latency_ms"]["click_to_outcome"]["measured"] is False
+    assert payload["latency_ms"]["click_to_outcome"]["p50_ms"] is None
+
+    page = render_page()
+    assert 'id="latency"' in page
+    # The renderer sends a dash for a null figure instead of a number.
+    assert 'value === null || value === undefined' in page
+    assert "metrics" in page
 
 
 def test_positions_endpoint_fails_closed_without_ui_position_values(

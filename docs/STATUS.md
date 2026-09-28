@@ -7,7 +7,7 @@ still open with the reason it is open.
 Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 [demo validation](MT5_DEMO_VALIDATION.md) for the measured MT5 record.
 
-**State as of 2026-09-28.** `main` is green: 333 tests, `ruff` clean, `mypy
+**State as of 2026-09-28.** `main` is green: 355 tests, `ruff` clean, `mypy
 --strict` clean. Every claim below was either executed on this machine or is
 labelled as not run.
 
@@ -93,16 +93,19 @@ infrastructure.
 | Item | Blocked by |
 | --- | --- |
 | Recovery after terminal restart | partly done: a crash between the click and the observation is covered end to end, including the durable `REQUESTED` record, the refusal of the same signal after a restart, and settlement only by the operator. Still open: the same sequence against a real terminal that is killed mid-order |
-| Structured metrics and latency observability | nothing; the audit log is structured JSONL but has no counters and no timing summary |
 | Authenticated local APIs | nothing; the dashboard is loopback-only with a control token, and the HTTP signal source is a client, not an API |
 | Reliability across DPI, monitors, focus loss, dialogs | needs a second machine, or an MT5 build on this one that can be resized and moved; the focus-loss defect found on 2026-09-28 is now covered by the window manager bringing the terminal forward |
 | Independent review of the hand-written WebSocket client | needs a second pair of eyes, or a decision to accept a runtime dependency |
 | Complete bilingual documentation synchronization | needs a translation pass; the Persian README covers the current state but not every new page |
 | Hedge, partial close, modify | needs measured control identifiers and verification of the resulting state |
 
-Settling an execution record an operator later proved is no longer open: see
-[recovery](RECOVERY.md). Hedge, partial close, and modify are deliberately not
-planned in this phase.
+Two items are no longer open. Settling an execution record an operator later
+proved is described in [recovery](RECOVERY.md). Structured metrics and latency
+observability are described in [metrics](METRICS.md): they are derived from the
+audit log rather than collected in memory, so a run that crashed between the
+click and the observation is still measured, and a phase with no measurement
+reports nothing rather than a zero. Hedge, partial close, and modify are
+deliberately not planned in this phase.
 
 ## How to reproduce the verification
 

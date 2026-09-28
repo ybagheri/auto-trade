@@ -5,6 +5,7 @@ from typing import Any
 
 from ..application.kill_switch import FileKillSwitch
 from ..application.ledger import JsonExecutionLedger
+from ..application.metrics import summarize
 from ..domain.exceptions import AutoTradeError
 from ..domain.models import utc_now
 from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
@@ -90,6 +91,20 @@ class StatusReporter:
             self.ledger.records(), key=lambda item: str(item.get("timestamp", "")), reverse=True
         )
         return {"executions": list(records)}
+
+    def metrics(self, tail: int = 2000) -> dict[str, Any]:
+        """Latency and counters for the executions the audit tail covers.
+
+        Read-only, and derived from the same log the dashboard already shows. The
+        unresolved count is the figure an operator acts on: it is the number of
+        attempts that used a final control and recorded no result, each of which
+        needs the account looked at by hand.
+        """
+        parsed = self.logs(tail)
+        return summarize(
+            [event for event in parsed.get("events", []) if isinstance(event, dict)],
+            truncated=bool(parsed.get("truncated")),
+        ).to_dict()
 
     def signals(self) -> dict[str, Any]:
         directory = self.config.signal_directory

@@ -54,6 +54,19 @@ from the dashboard blocks a `dry-run` started from a separate shell. The CLI als
 drains `main()`'s return value, so a blocked run exits non-zero instead of
 looking successful to a scheduler.
 
+## Timing is a description, not a verdict
+
+The Timing section renders a dash, never `0 ms`, for a phase that was not
+measured. A dry run never uses a final control, so its click phases have no
+measurement; showing zero there would read as an instantaneous trade.
+
+The figures are derived from the audit log rather than held in the server's
+memory, so a run that crashed between the click and the observation is still
+counted, and the page says so when the underlying log tail is truncated. No
+figure on this page reports a trade as accepted, because nothing in this
+application observes broker acceptance; the ledger settles an outcome. See
+[metrics](METRICS.md).
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -65,6 +78,7 @@ looking successful to a scheduler.
 | GET | `/api/positions` | position observation status, or a reason it is unavailable |
 | GET | `/api/signals` | pending signal files |
 | GET | `/api/executions` | ledger records, newest first |
+| GET | `/api/metrics?tail=N` | counters and per-phase latency, N capped at 5000 |
 | GET | `/api/logs?tail=N` | audit log tail, N capped at 5000 |
 | POST | `/api/emergency-stop` | activate the durable stop (token) |
 | POST | `/api/resume` | clear the stop (token) |
