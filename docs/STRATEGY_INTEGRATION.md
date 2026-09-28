@@ -103,3 +103,5 @@ the requested action.
 
 See [EXECUTION.md](EXECUTION.md) for the full gate list and the measured control
 identifiers.
+
+[فارسی](fa/STRATEGY_INTEGRATION.md) · [execution](EXECUTION.md) · [metrics](METRICS.md)

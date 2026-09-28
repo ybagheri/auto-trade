@@ -38,3 +38,5 @@ Timing, regularity, latency, and repeated symbol/volume choices can be correlate
 ## Compliance position
 
 Automated trading and desktop automation may be restricted. This project does not claim that UI automation is “manual trading” and does not claim that any provider permits or forbids this architecture. Users must confirm permissions with the broker, prop firm, or account provider.
+
+[فارسی](fa/TRACEABILITY.md) · [safety](SAFETY.md) · [signal protocol](SIGNAL_PROTOCOL.md)

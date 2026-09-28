@@ -153,3 +153,5 @@ scope until they are implemented properly rather than approximated.
 ## Errors
 
 Malformed JSON, unsupported actions, missing fields, invalid numbers, invalid timestamps, and non-positive volumes are rejected before execution. Errors must be recorded without secrets.
+
+[فارسی](fa/SIGNAL_PROTOCOL.md) · [safety](SAFETY.md) · [recovery](fa/RECOVERY.md)

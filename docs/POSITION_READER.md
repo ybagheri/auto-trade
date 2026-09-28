@@ -44,3 +44,5 @@ A successful read reports `AVAILABLE` and a position list. An unavailable, stale
 ## Execution relationship
 
 The indicator only supplies the baseline and post-click observation. The order itself is still performed by the guarded MT5 desktop control, not by the indicator. A click is reported as `REQUESTED`; only an independent matching position observation can produce `ACCEPTED`.
+
+[فارسی](fa/POSITION_READER.md) · [execution](EXECUTION.md) · [recovery](RECOVERY.md)

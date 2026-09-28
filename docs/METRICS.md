@@ -89,3 +89,5 @@ could be read as a trade:
 
 See [recovery](RECOVERY.md) for what a crash leaves behind and how an operator
 settles it, and [verification](VERIFICATION.md) for what counts as proof.
+
+[فارسی](fa/METRICS.md) · [recovery](RECOVERY.md) · [dashboard](DASHBOARD.md)

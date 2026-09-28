@@ -228,7 +228,7 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 355 unit and integration tests executed.
+- **PASS — mocked:** 411 unit and integration tests executed.
 - **PASS — crash between the click and the observation:** the durable record stays pending, a restarted process refuses the same signal without touching the terminal, and only an operator can settle it. See [recovery](docs/RECOVERY.md).
 - **PASS — metrics and latency:** counters and per-phase timing, derived from the audit log so a crashed run is still measured. An unmeasured phase reports nothing rather than a zero. See [metrics](docs/METRICS.md).
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
@@ -257,13 +257,13 @@ Current automated status:
 - [Compliance](docs/COMPLIANCE.md)
 - [Testing](docs/TESTING.md)
 - [Verification](docs/VERIFICATION.md)
-- [Position reader](docs/POSITION_READER.md)
-- [Dashboard](docs/DASHBOARD.md)
-- [Strategy integration](docs/STRATEGY_INTEGRATION.md)
-- [Execution](docs/EXECUTION.md)
+- [Position reader](docs/POSITION_READER.md) · [فارسی](docs/fa/POSITION_READER.md)
+- [Dashboard](docs/DASHBOARD.md) · [فارسی](docs/fa/DASHBOARD.md)
+- [Strategy integration](docs/STRATEGY_INTEGRATION.md) · [فارسی](docs/fa/STRATEGY_INTEGRATION.md)
+- [Execution](docs/EXECUTION.md) · [فارسی](docs/fa/EXECUTION.md)
 - [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
-- [Recovery](docs/RECOVERY.md)
-- [Metrics](docs/METRICS.md)
+- [Recovery](docs/RECOVERY.md) · [فارسی](docs/fa/RECOVERY.md)
+- [Metrics](docs/METRICS.md) · [فارسی](docs/fa/METRICS.md)
 - [MT5 demo validation](docs/MT5_DEMO_VALIDATION.md)
 - [Packaging](docs/PACKAGING.md)
 - [Persian documentation](README.fa.md)

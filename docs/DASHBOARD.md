@@ -95,3 +95,5 @@ distinguishable. The dashboard never opens or drives the MT5 window.
 `tests/unit/test_dashboard.py` covers loopback enforcement, token rejection,
 durability of the stop across instances, and the read-only endpoints. It binds
 port 0 on loopback only, so it needs no MT5 and no fixed port.
+
+[فارسی](fa/DASHBOARD.md) · [metrics](METRICS.md) · [recovery](RECOVERY.md)

@@ -126,3 +126,5 @@ a close. `close_position` does not modify, partially close, or hedge: the menu
 entries `Close by`, `Close 50%` and `Close All` are neighbours of the entry this
 code uses and are named in `closing.py` so the reason for the exact match is on
 record.
+
+[فارسی](fa/EXECUTION.md) · [recovery](RECOVERY.md) · [metrics](METRICS.md)

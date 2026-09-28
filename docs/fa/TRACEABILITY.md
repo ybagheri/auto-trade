@@ -26,3 +26,5 @@ indicator یک برنامه MQL5 است. پس از compile و attach ممکن ا
 ## موضع انطباق
 
 این پروژه ادعا نمی‌کند اتوماسیون دسکتاپ «معامله دستی» است و ادعایی درباره مجاز یا غیرمجاز بودن این معماری نزد هر provider ندارد. کاربر باید مجاز بودن را با broker، prop firm یا account provider تأیید کند.
+
+## [English](TRACEABILITY.md) · [ایمنی](SAFETY.md) · [پروتکل سیگنال](SIGNAL_PROTOCOL.md)

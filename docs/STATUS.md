@@ -7,7 +7,7 @@ still open with the reason it is open.
 Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 [demo validation](MT5_DEMO_VALIDATION.md) for the measured MT5 record.
 
-**State as of 2026-09-28.** `main` is green: 355 tests, `ruff` clean, `mypy
+**State as of 2026-09-28.** `main` is green: 411 tests, `ruff` clean, `mypy
 --strict` clean. Every claim below was either executed on this machine or is
 labelled as not run.
 
@@ -96,7 +96,7 @@ infrastructure.
 | Authenticated local APIs | nothing; the dashboard is loopback-only with a control token, and the HTTP signal source is a client, not an API |
 | Reliability across DPI, monitors, focus loss, dialogs | needs a second machine, or an MT5 build on this one that can be resized and moved; the focus-loss defect found on 2026-09-28 is now covered by the window manager bringing the terminal forward |
 | Independent review of the hand-written WebSocket client | needs a second pair of eyes, or a decision to accept a runtime dependency |
-| Complete bilingual documentation synchronization | needs a translation pass; the Persian README covers the current state but not every new page |
+| Complete bilingual documentation synchronization | done for the pages that state a refusal, a recovery, or an observation. Ten developer- and operator-facing reference pages are English-only and named as deliberate in `tests/unit/test_documentation.py`, which fails when a pair drifts |
 | Hedge, partial close, modify | needs measured control identifiers and verification of the resulting state |
 
 Two items are no longer open. Settling an execution record an operator later

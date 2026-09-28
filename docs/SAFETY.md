@@ -27,3 +27,5 @@ Auto Trade is not financial, broker, or execution advice. It can create orders w
 Before enabling a real action, implement durable idempotency, terminal/account identity checks, confirmation policy enforcement, position verification, restart recovery, and an emergency stop. Never infer demo status from a button click or a title alone.
 
 If any state is ambiguous, stop. Do not retry automatically.
+
+[فارسی](fa/SAFETY.md) · [signal protocol](SIGNAL_PROTOCOL.md) · [traceability](TRACEABILITY.md)

@@ -10,6 +10,8 @@ The application writes `logs/idempotency.json` as a durable execution ledger. Ea
 - A different execution ID cannot replace an existing ledger entry.
 - A corrupt or unreadable ledger fails closed with `UNKNOWN_EXECUTION`.
 
+The ledger is local operational data and is not a substitute for broker-side position verification. Operators must compare pending records with the MT5 demo account before clearing or resolving them.
+
 ## A crash between the click and the observation
 
 The dangerous window is the one after the final control has been used and before
@@ -33,8 +35,6 @@ What is pinned by `tests/integration/test_crash_recovery.py`:
 What is not automated, and why: killing a real terminal mid-order needs a person
 and a running MT5 build. The automated test proves the durable behaviour, not
 the terminal's.
-
-The ledger is local operational data and is not a substitute for broker-side position verification. Operators must compare pending records with the MT5 demo account before clearing or resolving them.
 
 ## Reviewing
 
@@ -73,3 +73,5 @@ What it does and deliberately does not do:
 No automatic recovery action is provided, and none is planned: every path that
 changes an account in this project is operator-initiated and independently
 observed.
+
+[فارسی](fa/RECOVERY.md) · [execution](EXECUTION.md) · [metrics](METRICS.md)

@@ -95,7 +95,10 @@ kill switch و انتهای لاگ حسابرسی می‌سازد. این کار
 
 ## آزمون
 
-- **PASS — mocked:** ۳۲۴ تست unit و integration اجرا شد.
+- **PASS — mocked:** ۴۱۱ تست unit و integration اجرا شد.
+- **PASS — مستندات دو زبانه:** هر صفحه‌ای که یک رد، یک بازیابی یا یک مشاهده را توصیف می‌کند ترجمه‌ی فارسی دارد، هر دو زبان به هم لینک دارند، و هر دو README هر دو زبان را فهرست می‌کنند.
+- **PASS — crash بین کلیک و مشاهده:** رکورد پایدار pending می‌ماند، پروسه‌ی پس از restart همان سیگنال را بدون دست‌زدن به ترمینال رد می‌کند، و فقط اپراتور می‌تواند آن را تسویه کند. [بازیابی](docs/fa/RECOVERY.md)
+- **PASS — سنجه‌ها و تأخیر:** شمارنده‌ها و زمان‌سنجی هر فاز، استخراج‌شده از لاگ حسابرسی، پس اجرایی که crash کرده همچنان اندازه‌گیری می‌شود. فاز اندازه‌گیری‌نشده چیزی گزارش نمی‌کند، نه صفر. [سنجه‌ها](docs/fa/METRICS.md)
 - **PASS — محیط:** ترمینال Alpari MT5 نسخه ۶۱۸۴، پوشه‌ی داده و پروسه‌ی در حال اجرای `Alpari-MT5-Demo` پیدا و توسط کد خودِ پروژه شناسایی شدند.
 - **PASS — ساخت اندیکاتور:** `AutoTradePositionReader` با ۰ خطا و ۰ هشدار کامپایل شد، در Navigator ثبت شد و به چارت `EURUSD,M5` متصل است.
 - **PASS — snapshot پوزیشن:** `position-snapshot` وضعیت `AVAILABLE` را از یک snapshot زنده و کامل گزارش می‌کند و حساب در حال حاضر پوزیشن بازی ندارد.
@@ -105,7 +108,7 @@ kill switch و انتهای لاگ حسابرسی می‌سازد. این کار
 - **PASS — executable:** ساخت ویندوز اجرا شد و `diagnostics`، `diagnostics-bundle`، `dry-run --mock` و داشبورد کار کردند؛ با پایتون ۳.۱۳ ساخته شده و باید روی ۳.۱۲ بازساخته شود.
 - **NOT RUN — نصب‌کننده:** تعریف Inno Setup کامپایل نشد، چون روی این ماشین نصب نیست.
 - **PASS — سفارش demo محافظت‌شده:** اجرای واقعی `execute --confirm-demo` روی حساب demo نتیجه‌ی `ACCEPTED` داد، همراه با `order_reference`، baseline خالی و شواهد پوزیشن مشاهده‌شده. تلاش اول `UNKNOWN` داد و سه ایراد پس از کلیک آشکار کرد که هر سه رفع شدند.
-- **در انتظار اقدام دستی — بستن پوزیشن:** پوزیشنی که هر تست باز کرد باید با دست بسته شود؛ این پروژه مسیر بستن پوزیشن را پیاده‌سازی نکرده است.
+- **PASS — بستن پوزیشن محافظت‌شده:** `close-position 382652281 --confirm-demo` مقدار `CLOSED` داد و ticket از یک مشاهده‌ی مستقل ناپدید شد. تنها پوزیشنی که همین برنامه باز کرده قابل بستن است. [اجرا](docs/fa/EXECUTION.md)
 - **NOT RUN — حساب واقعی:** در هیچ مرحله‌ای از حساب واقعی یا شارژشده استفاده نشد.
 
 - **MANUAL TEST REQUIRED:** انتخاب نماد، رفتار DPI و رد شدن سفارش توسط بروکر باید در demo بررسی شوند.
@@ -120,12 +123,20 @@ kill switch و انتهای لاگ حسابرسی می‌سازد. این کار
 - [ارزیابی معماری](docs/ARCHITECTURE_ASSESSMENT.md)
 - [معماری](docs/ARCHITECTURE.md)
 - [پیکربندی](docs/CONFIGURATION.md)
-- [پروتکل سیگنال](docs/SIGNAL_PROTOCOL.md)
+- [پروتکل سیگنال](docs/fa/SIGNAL_PROTOCOL.md) · [English](docs/SIGNAL_PROTOCOL.md)
+- [ایمنی](docs/fa/SAFETY.md) · [English](docs/SAFETY.md)
 - [یکپارچه‌سازی MT5](docs/MT5_INTEGRATION.md)
+- [position reader](docs/fa/POSITION_READER.md) · [English](docs/POSITION_READER.md)
+- [داشبورد](docs/fa/DASHBOARD.md) · [English](docs/DASHBOARD.md)
+- [اجرا](docs/fa/EXECUTION.md) · [English](docs/EXECUTION.md)
+- [بازیابی](docs/fa/RECOVERY.md) · [English](docs/RECOVERY.md)
+- [سنجه‌ها](docs/fa/METRICS.md) · [English](docs/METRICS.md)
+- [یکپارچه‌سازی استراتژی](docs/fa/STRATEGY_INTEGRATION.md) · [English](docs/STRATEGY_INTEGRATION.md)
+- [فهرست آثار قابل ردیابی](docs/fa/TRACEABILITY.md) · [English](docs/TRACEABILITY.md)
 - [بسته‌بندی](docs/PACKAGING.md)
 - [توسعه و آزمون](docs/TESTING.md)
 - [English documentation](README.md)
 
 ## نقشه‌ی راه
 
-مرحله‌ی بعد شامل کشف پنجره و کنترل‌های UI، آماده‌سازی dry-run، تأیید مستقل نتیجه و سپس آزمون کنترل‌شده روی حساب demo است. مسیر اجرای زنده تا زمانی که این کنترل‌ها کامل نشده‌اند مسدود خواهد بود.
+وضعیت فعلی در [ROADMAP.md](ROADMAP.md) و [docs/STATUS.md](docs/STATUS.md) ثبت شده است. فازهای ۰ تا ۹ کامل‌اند و هر دو کنترلی که حساب را تغییر می‌دهند — ثبت سفارش و بستن پوزیشن — روی یک ترمینال demo واقعی اجرا و تأیید شده‌اند. مسیر اجرای زنده تا زمانی که این کنترل‌ها کامل نشده‌اند مسدود خواهد بود.

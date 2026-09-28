@@ -132,6 +132,20 @@ compiled. See [packaging](docs/PACKAGING.md).
       be able to look like a verdict on an outcome.
 - [ ] Security review and dependency review.
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.
-- [ ] Complete bilingual documentation synchronization.
+- [x] Complete bilingual documentation synchronization.
+  - The pages that describe a refusal, a recovery, or an observation now have a
+      Persian translation under `docs/fa/`, each linking to the other, and both
+      READMEs index both languages: `DASHBOARD.md`, `EXECUTION.md`,
+      `METRICS.md`, `POSITION_READER.md`, `RECOVERY.md`, `SAFETY.md`,
+      `SIGNAL_PROTOCOL.md`, and `TRACEABILITY.md`.
+  - `tests/unit/test_documentation.py` fails when a pair drifts: a missing page,
+      a missing cross-link, a dropped safety section, a mistyped identifier, or a
+      gate added on one side of the execution tables only. It found three pages
+      with no way back to their translation.
+  - Eight pages are still English-only and are named in that test, so the gap is
+      a decision rather than an oversight: `ARCHITECTURE.md`,
+      `ARCHITECTURE_ASSESSMENT.md`, `CONFIGURATION.md`, `COMPLIANCE.md`,
+      `TESTING.md`, `VERIFICATION.md`, `STATUS.md`, `PACKAGING.md`,
+      `MT5_INTEGRATION.md`, and `MT5_DEMO_VALIDATION.md`.
 - [ ] Independent review of the hand-written WebSocket client, or replace it with a
       reviewed dependency once the project accepts a runtime dependency.
