@@ -55,6 +55,12 @@
   - Confirmed 2026-09-28 on Alpari MT5 6184: `position-snapshot` reports
       `AVAILABLE` with a complete, advancing snapshot. See
       [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 4, 4a, 4b, 4c.
+- [x] Implement a guarded position close, proven by the snapshot.
+  - Only a position this application opened is closable, only through the
+      `Close Position` row menu entry, and only when the ticket disappears from an
+      independent observation. Confirmed live on 2026-09-28 (`CLOSED`).
+- [ ] Hedge, partial close, and modify: refused today. Each would need its own
+      measured control identifiers and its own verification of the new state.
 
 ## Phase 6 — Desktop UI
 

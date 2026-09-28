@@ -44,6 +44,7 @@ from .execution import (
 from .positions_file import MT5FilePositionSnapshotProvider
 
 MENU_OPEN_SECONDS = 5.0
+MENU_SETTLE_SECONDS = 3.0
 POPUP_MENU_CLASS = "#32768"
 
 _ELEMENT_GONE: tuple[type[BaseException], ...] | None = None
@@ -54,6 +55,69 @@ def _require_pywinauto() -> Any:
         return importlib.import_module("pywinauto")
     except ImportError as exc:
         raise AutomationError("pywinauto is required for real terminal inspection") from exc
+
+
+def _menu_items(pywinauto: Any, handle: int) -> list[Any]:
+    return [
+        control
+        for control in pywinauto.Desktop(backend="uia")
+        .window(handle=handle)
+        .descendants()
+        if control.element_info.control_type == "MenuItem"
+    ]
+
+
+def _menu_entry_pairs(pywinauto: Any, handle: int) -> list[tuple[str, str]]:
+    return [
+        (
+            str(control.element_info.name or "").strip(),
+            str(control.element_info.automation_id or ""),
+        )
+        for control in _menu_items(pywinauto, handle)
+    ]
+
+
+def _await_menu_entries(pywinauto: Any, handle: int) -> list[tuple[str, str]]:
+    """Read a popup menu until it stops changing, or a bound passes.
+
+    A popup window exists before its entries are added, so a single read can see
+    a half-built menu and report a missing entry that is about to appear. The
+    read is repeated until two consecutive reads agree, and the last list is
+    returned either way, so a caller that insists on one exact entry still
+    refuses when that entry is genuinely absent.
+    """
+    deadline = time.monotonic() + MENU_SETTLE_SECONDS
+    entries: list[tuple[str, str]] = []
+    while time.monotonic() < deadline:
+        current = _menu_entry_pairs(pywinauto, handle)
+        if current and current == entries:
+            return current
+        entries = current
+        time.sleep(0.15)
+    return entries
+
+
+def _await_menu_entry(
+    pywinauto: Any, handle: int, name: str, control_id: str
+) -> Any | None:
+    """Wait for exactly one entry matching *name* and *control_id*, else ``None``."""
+    deadline = time.monotonic() + MENU_SETTLE_SECONDS
+    while time.monotonic() < deadline:
+        matches = [
+            control
+            for control in _menu_items(pywinauto, handle)
+            if str(control.element_info.name or "").split("\t")[0].strip() == name
+            and str(control.element_info.automation_id or "") == control_id
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise AutomationError(
+                f"menu entry {name!r} (id {control_id}) matched {len(matches)} elements; "
+                "nothing was clicked"
+            )
+        time.sleep(0.15)
+    return None
 
 
 def _element_gone() -> tuple[type[BaseException], ...]:
@@ -288,107 +352,101 @@ class MT5WindowManager:
         )
         return rows
 
-    def open_row_context_menu(self, row: Any) -> list[tuple[str, str]]:
-        """Right-click *row* and return the menu entries as (name, id) pairs.
+    def row_context_menu(self, row: Any) -> RowContextMenu:
+        """Open *row*'s context menu once and return a handle for reading and using it.
 
-        The menu is a standard popup, so its entries are read through the
-        accessibility tree by name. Nothing is chosen here: the caller decides
-        whether an entry is the one it is allowed to use.
+        The terminal is brought to the foreground first: the row is clicked at a
+        screen coordinate taken from the accessibility tree, so a click that
+        lands on whatever is in front of the terminal would open a different
+        program's menu. The returned object dismisses the menu when its context
+        exits, on every path.
         """
         pywinauto = _require_pywinauto()
+        self._focus_window()
+        if not self._point_inside_window(row):
+            raise AutomationError(
+                "the trade row is not inside the connected window; refusing to click"
+            )
         before = {
-            window.handle
-            for window in pywinauto.Desktop(backend="win32").windows()
-            if window.class_name() == POPUP_MENU_CLASS
+            candidate.handle
+            for candidate in pywinauto.Desktop(backend="win32").windows()
+            if candidate.class_name() == POPUP_MENU_CLASS
         }
         row.click_input(button="right")
-        deadline = time.monotonic() + MENU_OPEN_SECONDS
-        popup = None
-        while time.monotonic() < deadline:
-            appeared = [
-                window
-                for window in pywinauto.Desktop(backend="win32").windows()
-                if window.class_name() == POPUP_MENU_CLASS and window.handle not in before
-            ]
-            if len(appeared) == 1:
-                popup = appeared[0]
-                break
-            if len(appeared) > 1:
-                raise AutomationError("more than one context menu appeared; refusing to guess")
-            time.sleep(0.2)
-        if popup is None:
-            raise AutomationError("the row context menu did not appear")
-        try:
-            entries = [
-                (
-                    str(control.element_info.name or "").strip(),
-                    str(control.element_info.automation_id or ""),
-                )
-                for control in pywinauto.Desktop(backend="uia")
-                .window(handle=popup.handle)
-                .descendants()
-                if control.element_info.control_type == "MenuItem"
-            ]
-        finally:
-            # The menu is dismissed on every path, so a refusal never leaves it
-            # open over the account.
-            self._dismiss_menu(pywinauto)
-        if not entries:
-            raise AutomationError("the row context menu exposed no entries")
-        return entries
+        popup = self._await_popup(pywinauto, before)
+        return RowContextMenu(pywinauto, popup.handle)
 
-    def click_row_menu_entry(
-        self, row: Any, name: str, control_id: str
-    ) -> None:
-        """Open the row's menu and click the one entry that matches name and id."""
-        pywinauto = _require_pywinauto()
-        before = {
-            window.handle
-            for window in pywinauto.Desktop(backend="win32").windows()
-            if window.class_name() == POPUP_MENU_CLASS
-        }
-        row.click_input(button="right")
+    def _focus_window(self) -> None:
+        window = self._window
+        if window is None:
+            raise AutomationError("MT5 window is not connected")
+        self._guard("MT5 window", lambda: window.set_focus())
+        time.sleep(0.3)
+
+    def _point_inside_window(self, row: Any) -> bool:
+        window = self._window
+        if window is None:
+            return False
+        area = row.rectangle()
+        bounds: Any = window.rectangle()
+        point = ((area.left + area.right) // 2, (area.top + area.bottom) // 2)
+        return bool(
+            bounds.left <= point[0] <= bounds.right and bounds.top <= point[1] <= bounds.bottom
+        )
+
+    def _await_popup(self, pywinauto: Any, before: set[int]) -> Any:
         deadline = time.monotonic() + MENU_OPEN_SECONDS
-        popup = None
         while time.monotonic() < deadline:
             appeared = [
-                window
-                for window in pywinauto.Desktop(backend="win32").windows()
-                if window.class_name() == POPUP_MENU_CLASS and window.handle not in before
+                candidate
+                for candidate in pywinauto.Desktop(backend="win32").windows()
+                if candidate.class_name() == POPUP_MENU_CLASS
+                and candidate.handle not in before
             ]
             if len(appeared) == 1:
-                popup = appeared[0]
-                break
+                return appeared[0]
             if len(appeared) > 1:
-                self._dismiss_menu(pywinauto)
                 raise AutomationError("more than one context menu appeared; refusing to guess")
             time.sleep(0.2)
-        if popup is None:
-            raise AutomationError("the row context menu did not appear")
-        try:
-            matches = [
-                control
-                for control in pywinauto.Desktop(backend="uia")
-                .window(handle=popup.handle)
-                .descendants()
-                if control.element_info.control_type == "MenuItem"
-                and str(control.element_info.name or "").split("\t")[0].strip() == name
-                and str(control.element_info.automation_id or "") == control_id
-            ]
-            if len(matches) != 1:
-                raise AutomationError(
-                    f"menu entry {name!r} (id {control_id}) matched {len(matches)} elements; "
-                    "nothing was clicked"
-                )
-            matches[0].click_input()
-        finally:
-            self._dismiss_menu(pywinauto)
+        raise AutomationError("the row context menu did not appear")
 
     @staticmethod
     def _dismiss_menu(pywinauto: Any) -> None:
         pywinauto.keyboard.send_keys("{ESC}")
         time.sleep(0.2)
         pywinauto.keyboard.send_keys("{ESC}")
+
+
+class RowContextMenu:
+    """An open row menu: read its entries, or click exactly one of them."""
+
+    def __init__(self, pywinauto: Any, handle: int) -> None:
+        self._pywinauto = pywinauto
+        self._handle = handle
+        self._closed = False
+
+    def __enter__(self) -> RowContextMenu:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def entries(self) -> list[tuple[str, str]]:
+        return _await_menu_entries(self._pywinauto, self._handle)
+
+    def click(self, name: str, control_id: str) -> None:
+        entry = _await_menu_entry(self._pywinauto, self._handle, name, control_id)
+        if entry is None:
+            raise AutomationError(
+                f"menu entry {name!r} (id {control_id}) is not present; nothing was clicked"
+            )
+        entry.click_input()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        MT5WindowManager._dismiss_menu(self._pywinauto)
 
 
 class MT5DesktopAdapter:
@@ -628,11 +686,9 @@ class MT5DesktopAdapter:
         try:
             rows = self.window_manager.trade_rows()
             row = position_row(rows)
-            entries = self.window_manager.open_row_context_menu(row)
-            only_close_entry(entries)
-            self.window_manager.click_row_menu_entry(
-                row, CLOSE_MENU_ITEM_NAME, CLOSE_MENU_ITEM_ID
-            )
+            with self.window_manager.row_context_menu(row) as menu:
+                only_close_entry(menu.entries())
+                menu.click(CLOSE_MENU_ITEM_NAME, CLOSE_MENU_ITEM_ID)
         except LookupError as exc:
             return self._close_refused(f"refusing to close: {exc}")
         except AutomationError as exc:

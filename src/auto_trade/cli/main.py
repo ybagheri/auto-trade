@@ -474,7 +474,10 @@ def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
         return 2
     if not config.policy.execution_enabled and not _flag_enabled("AUTO_TRADE_ENABLE_CLOSE"):
         print(
-            "ERROR: closing is disabled; set AUTO_TRADE_ENABLE_CLOSE=true",
+            "ERROR: closing is disabled. Set AUTO_TRADE_ENABLE_CLOSE=true in .env, or in "
+            "this shell only:\n"
+            "  PowerShell  $env:AUTO_TRADE_ENABLE_CLOSE=\"true\"\n"
+            "  cmd         set AUTO_TRADE_ENABLE_CLOSE=true",
             file=sys.stderr,
         )
         return 2

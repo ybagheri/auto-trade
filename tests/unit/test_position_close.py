@@ -53,6 +53,29 @@ class FakeRow:
         self.clicks += 1
 
 
+class FakeMenu:
+    """Stands in for an open row menu, and records what was clicked."""
+
+    def __init__(
+        self, entries: list[tuple[str, str]], clicks: list[tuple[str, str]]
+    ) -> None:
+        self._entries = entries
+        self._clicks = clicks
+        self.closed = False
+
+    def __enter__(self) -> FakeMenu:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.closed = True
+
+    def entries(self) -> list[tuple[str, str]]:
+        return list(self._entries)
+
+    def click(self, name: str, control_id: str) -> None:
+        self._clicks.append((name, control_id))
+
+
 class FakeTradeManager(MT5WindowManager):
     """A Trade tab with a known shape, a known menu, and a click counter."""
 
@@ -70,25 +93,20 @@ class FakeTradeManager(MT5WindowManager):
             else [("New Order\tF9", "33029"), (CLOSE_MENU_ITEM_NAME, CLOSE_MENU_ITEM_ID)]
         )
         self._raise_on_rows = raise_on_rows
-        self.menu_reads = 0
         self.menu_clicks: list[tuple[str, str]] = []
         self.row_clicks = 0
+        self.last_menu: FakeMenu | None = None
 
     def trade_rows(self) -> list[Any]:
         if self._raise_on_rows is not None:
             raise self._raise_on_rows
         return list(self._rows)
 
-    def open_row_context_menu(self, row: Any) -> list[tuple[str, str]]:
-        self.menu_reads += 1
-        setattr(row, "click", lambda *args, **kwargs: None)
-        row.clicks += 1
-        return list(self._entries)
-
-    def click_row_menu_entry(self, row: Any, name: str, control_id: str) -> None:
-        row.clicks += 1
+    def row_context_menu(self, row: Any) -> Any:
         self.row_clicks += 1
-        self.menu_clicks.append((name, control_id))
+        row.clicks += 1
+        self.last_menu = FakeMenu(self._entries, self.menu_clicks)
+        return self.last_menu
 
 
 def adapter_for(
@@ -244,7 +262,8 @@ def test_a_menu_with_no_close_entry_leaves_the_position_open() -> None:
 
     assert result.status is ExecutionStatus.REJECTED
     assert "refusing to close" in result.message
-    assert manager.row_clicks == 0
+    # The row was right-clicked to read the menu; no entry was ever used.
+    assert manager.menu_clicks == []
 
 
 # -- the successful path ----------------------------------------------
@@ -261,6 +280,18 @@ def test_a_closed_position_is_proven_by_the_snapshot() -> None:
     assert result.order_reference == "555"
     assert manager.row_clicks == 1
     assert manager.menu_clicks == [(CLOSE_MENU_ITEM_NAME, CLOSE_MENU_ITEM_ID)]
+    assert manager.last_menu is not None and manager.last_menu.closed
+
+
+def test_the_menu_is_dismissed_even_when_a_refusal_happens() -> None:
+    manager = FakeTradeManager(entries=[("New Order\tF9", "33029")])
+    adapter = adapter_for(ScriptedProvider((position(),)), manager)
+
+    adapter.close_position("555")
+
+    assert manager.last_menu is not None
+    assert manager.last_menu.closed
+    assert manager.menu_clicks == []
 
 
 def test_a_position_that_stays_open_is_unknown() -> None:
@@ -279,10 +310,14 @@ def test_a_position_that_stays_open_is_unknown() -> None:
 def test_a_click_never_claims_a_close_it_could_not_observe() -> None:
     provider = ScriptedProvider((position("555"),))
     manager = FakeTradeManager()
-    setattr(manager, "click_row_menu_entry", lambda *args, **kwargs: (_ for _ in ()).throw(
-        AutomationError("menu entry was not found")
-    ))
+    original = manager.row_context_menu
+
+    def failing(row: Any) -> Any:
+        raise AutomationError("the row context menu did not appear")
+
+    manager.row_context_menu = failing  # type: ignore[method-assign]
     adapter = adapter_for(provider, manager)
+    assert original is not None
 
     result = adapter.close_position("555")
 

@@ -84,3 +84,45 @@ The supported target is a demo account, and the first run should be watched:
 4. Keep the kill switch one HTTP call away: `python -m auto_trade dashboard`.
 5. Watch the audit log. Every gate refusal and every verification outcome is
    recorded with its evidence.
+
+## Closing a position
+
+Closing is the second control that changes an account, and it has its own opt-in
+so that it is never reachable because an order was allowed.
+
+```dotenv
+AUTO_TRADE_ENABLE_CLOSE=true
+AUTO_TRADE_DRY_RUN=false
+```
+
+```powershell
+python -m auto_trade close-position 382652281 --confirm-demo
+```
+
+| Gate | Default | Refusal message |
+| --- | --- | --- |
+| `AUTO_TRADE_ENABLE_CLOSE` | `false` | `closing is disabled; set AUTO_TRADE_ENABLE_CLOSE=true to allow it` |
+| kill switch | file-backed, off | `kill switch is active` |
+| dry-run | `true` | `dry-run is enforced` |
+| demo-only policy | `true` | `demo-only policy is not satisfied` |
+| ticket in the execution ledger | required | `ticket ... is not in the execution ledger, so it is not a position this application opened` |
+| ticket observed now | required | `position ... is not in the observed snapshot` |
+| one open position only | required | `N positions are open and the trade grid exposes no row text` |
+| unambiguous row | one row, plus the summary row | `the trade grid exposes N rows; refusing to guess` |
+| menu entry | `Close Position` / `33033`, exactly one | `context menu has no 'Close Position' entry` / `automation id` |
+
+The ledger rule is the important one: only a position this application opened can
+be closed by this path, so a position a person opened is never touched by it.
+
+The row rule exists because the Trade grid on this build exposes a row's rectangle
+but not its text, so a ticket cannot be read out of the grid. With exactly one
+open position the first row is provably the intended one; with more, this code
+refuses and asks for a human.
+
+`CLOSED` is returned only when the ticket that was open when the call started is
+absent from a later observation. A position that merely changed is not mistaken
+for a closed one, and a snapshot that cannot be read yields `UNKNOWN` rather than
+a close. `close_position` does not modify, partially close, or hedge: the menu
+entries `Close by`, `Close 50%` and `Close All` are neighbours of the entry this
+code uses and are named in `closing.py` so the reason for the exact match is on
+record.

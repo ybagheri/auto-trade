@@ -218,7 +218,7 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 282 unit and integration tests executed.
+- **PASS — mocked:** 307 unit and integration tests executed.
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
 - **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position.
@@ -226,6 +226,7 @@ Current automated status:
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs on this build reached `ORDER_READY` and closed without a final control, with no position afterwards.
 - **AWAITING MANUAL STEP — position verification:** the snapshot path is confirmed, but no position has been opened by hand yet, so the verifier has not accepted a real position. One click in the Trade tab, then read the snapshot. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
 - **PASS — guarded demo order:** a real `execute --confirm-demo` on the demo account returned `ACCEPTED` with `order_reference`, an empty baseline, and the observed position in the evidence. The first attempt returned `UNKNOWN` and exposed three post-click defects, all fixed. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
+- **PASS — guarded position close:** `close-position 382652281 --confirm-demo` returned `CLOSED`, with the ticket gone from an independent observation. Only a position this application opened is closable, and only through the `Close Position` row menu entry. See [execution](docs/EXECUTION.md).
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.

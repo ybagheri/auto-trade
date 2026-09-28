@@ -10,7 +10,7 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 282 unit and integration tests passed.
+- **PASS — mocked:** 307 unit and integration tests passed.
 - **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
 - **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`, which is registered in the Navigator and attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live snapshot whose sequence advances and whose `complete` flag is true.
@@ -28,7 +28,7 @@ mypy src tests
 - **NOT RUN — real account:** no live or funded account was used at any point; every order above was on the demo account the title identifies.
 - **NOT RUN — installer:** `installer.iss` was never compiled; Inno Setup 6 is not installed here.
 - **BLOCKED — position verification by hand:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA, and the chart context menu is not in the accessibility tree, so opening a chart and placing a position by hand are human actions. The equivalent observation path was proven by the guarded order instead.
-- **NOT RUN — closing a position:** `close_position` is deliberately unimplemented, so the demo position each test opened was closed by the operator.
+- **NOT RUN — closing a position:** superseded. `close-position` returned `CLOSED` on the demo account with the ticket gone from the snapshot, after two defects were found and fixed: a popup menu read before its entries existed, and a click at a screen coordinate that needed the terminal focused first.
 - **MANUAL TEST REQUIRED:** open one demo position by hand, confirm the snapshot reports it, then close it. [demo validation](MT5_DEMO_VALIDATION.md) holds the procedure and the record.
 
 ## Test layers

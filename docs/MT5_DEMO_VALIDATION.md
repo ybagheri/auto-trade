@@ -175,10 +175,18 @@ of scope for this project at every step.
 
 ## Step 4 — close what the test opened
 
-The project has no implemented path for closing a position: `close_position`
-raises rather than guessing at the Trade grid, which exposes no rows to UI
-Automation. The operator closes the position by hand and the account returns to
-the state the record found it in.
+The close is now implemented and was proven on this account: `close-position
+382652281 --confirm-demo` returned `CLOSED`, with the position gone from an
+independent observation (`1 before, 0 after`). The order was a SELL this project
+had opened and recorded, which is the only kind of position this path will close.
+
+Two defects were found on the way and are fixed: a popup menu is read before its
+entries exist, and the terminal has to be brought to the foreground before a row is
+clicked at a screen coordinate. Both produced a refusal, and in both cases the
+position was left open, which is the correct failure for a control like this.
+
+`close_position` does not hedge and does not partially close; only `Close
+Position` on a single row is ever used.
 
 | # | Date | Terminal | Account | Item | Symbol / action / volume | Expected | Actual | Verification method | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
