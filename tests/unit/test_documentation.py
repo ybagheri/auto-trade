@@ -51,6 +51,7 @@ ENGLISH_ONLY: dict[str, str] = {
     "PACKAGING.md": "build and installer instructions for the packaging scripts",
     "MT5_INTEGRATION.md": "machine-specific paths and process discovery details",
     "MT5_DEMO_VALIDATION.md": "a measured validation record whose rows must not be reworded",
+    "SESSION_2026-09-28.md": "a dated handoff note for one session; a later one supersedes it",
 }
 
 LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")

@@ -7,7 +7,10 @@ still open with the reason it is open.
 Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 [demo validation](MT5_DEMO_VALIDATION.md) for the measured MT5 record.
 
-**State as of 2026-09-28.** `main` is green: 411 tests, `ruff` clean, `mypy
+For what the 2026-09-28 session changed and what it left open, see
+[the session summary](SESSION_2026-09-28.md).
+
+**State as of 2026-09-28.** `main` is green: 412 tests, `ruff` clean, `mypy
 --strict` clean. Every claim below was either executed on this machine or is
 labelled as not run.
 

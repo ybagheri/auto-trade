@@ -228,7 +228,7 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 411 unit and integration tests executed.
+- **PASS — mocked:** 412 unit and integration tests executed.
 - **PASS — crash between the click and the observation:** the durable record stays pending, a restarted process refuses the same signal without touching the terminal, and only an operator can settle it. See [recovery](docs/RECOVERY.md).
 - **PASS — metrics and latency:** counters and per-phase timing, derived from the audit log so a crashed run is still measured. An unmeasured phase reports nothing rather than a zero. See [metrics](docs/METRICS.md).
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
@@ -249,6 +249,7 @@ Current automated status:
 
 - [Architecture assessment](docs/ARCHITECTURE_ASSESSMENT.md)
 - [Project status](docs/STATUS.md)
+- [Session summary, 2026-09-28](docs/SESSION_2026-09-28.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Signal protocol](docs/SIGNAL_PROTOCOL.md)
