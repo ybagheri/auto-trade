@@ -220,10 +220,11 @@ Current automated status:
 
 - **PASS — mocked:** 271 unit and integration tests executed.
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
-- **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings and is registered under Navigator → Indicators.
-- **PASS — staleness guard:** a real snapshot left by an earlier session is refused as `stale`, not read as an empty account.
-- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
-- **AWAITING MANUAL STEP — position verification:** the indicator is not attached to a chart, and MT5's grids and context menus are not exposed to UI Automation, so the last click is a human action. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
+- **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to the `EURUSD,M5` chart.
+- **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position.
+- **PASS — staleness guard:** a real snapshot from an earlier session is refused as `stale`, not read as an empty account.
+- **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs on this build reached `ORDER_READY` and closed without a final control, with no position afterwards.
+- **AWAITING MANUAL STEP — position verification:** the snapshot path is confirmed, but no position has been opened by hand yet, so the verifier has not accepted a real position. One click in the Trade tab, then read the snapshot. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.

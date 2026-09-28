@@ -21,8 +21,10 @@ script. No value here is assumed.
 | Discovery | `python -m auto_trade diagnostics` reports `terminal_discovery: found` |
 | Indicator build | `MetaEditor64.exe /compile:` reported `0 errors, 0 warnings`; `AutoTradePositionReader.ex5` written |
 | Indicator registered | yes, `AutoTradePositionReader` appears under Navigator → Indicators |
-| Snapshot file | **not yet observed today**, because the indicator is not attached to a chart yet |
-| Stale snapshot present | yes, from a session on 2026-09-27: `position-snapshot` refused it as `stale (84756.8s old, limit 30s)` |
+| Indicator attached | yes, to the `EURUSD,M5` chart, after a human attach; the window title now carries the symbol |
+| Snapshot file | **observed**: `position-snapshot` reports `AVAILABLE`, sequence advancing 23 → 59, `complete: true` |
+| Snapshot contents | `"positions": []` — correct, the account has no open position |
+| Stale snapshot guard | a snapshot from 2026-09-27 was refused as `stale (84756.8s old, limit 30s)` before the indicator was attached |
 | Last known real position | `BITCOIN` `BUY` `0.01`, ticket `382363348`, in the 2026-09-27 snapshot; the Trade tab is empty today |
 
 A second terminal exists on this machine (`Alpari MT5_2`, build 6230, AMarkets
@@ -30,29 +32,32 @@ demo). It is not the configured instance and was not touched.
 
 ### What a real snapshot looks like
 
-A snapshot left by a session on 2026-09-27, read for its schema only:
+The snapshot written by the attached indicator today, read for its shape only:
 
 ```json
 {
-  "schema": 1, "sequence": 8740, "complete": true,
-  "written_at": "2026-09-27T09:12:57Z",
+  "schema": 1, "sequence": 23, "complete": true,
+  "written_at": "2026-09-28T08:53:48Z",
   "account": 53145727, "server": "Alpari-MT5-Demo", "terminal_build": 6184,
-  "positions": [
-    {"ticket": 382363348, "symbol": "BITCOIN", "type": "BUY", "volume": 0.01,
-     "price_open": 84484.0, "sl": 0.0, "tp": 0.0, "profit": 1.64,
-     "magic": 0, "opened_at": "2026-09-27T08:52:15Z"}
-  ]
+  "positions": []
 }
 ```
 
-Two things follow from it. The first is that this broker's build does publish
-the fields the verifier needs: `ticket`, `symbol`, `type`, and `volume`, with the
-side spelled as `BUY` or `SELL`. The second is that the file is from yesterday
-and from a program this repository no longer contains, so it is not evidence for
-today's indicator. What it did prove, by being present, is that the staleness
-guard fires on a real file rather than only in a test: `position-snapshot`
-reported `UNAVAILABLE` with the age in seconds and refused to read it as an empty
-account.
+An earlier snapshot from a session on 2026-09-27, when the account did hold a
+position, shows what a populated list looks like on this broker's build:
+
+```json
+{"ticket": 382363348, "symbol": "BITCOIN", "type": "BUY", "volume": 0.01,
+ "price_open": 84484.0, "sl": 0.0, "tp": 0.0, "profit": 1.64,
+ "magic": 0, "opened_at": "2026-09-27T08:52:15Z"}
+```
+
+Three things follow. The indicator is live and writing a complete snapshot every
+second, and `position-snapshot` reads it. The fields the verifier needs are
+`ticket`, `symbol`, `type`, and `volume`, with the side spelled `BUY` or `SELL`,
+so a real position is representable in this schema. And the stale guard fired on
+a real file before the indicator was attached: the reader reported `UNAVAILABLE`
+with the age in seconds instead of reading that old file as an empty account.
 
 The account number, the ticket, and the price are the user's own broker data.
 They are recorded here because this is a local validation record; do not copy
@@ -136,10 +141,12 @@ A live account is out of scope for this project at every step.
 | 1 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | executable and data directory exist | — | paths resolve | resolved | `diagnostics` | PASS |
 | 2 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | process discovery by path and instance name | — | exactly one match, titled demo | `terminal_discovery: found` | `WindowsTerminalDiscovery` | PASS |
 | 3 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | indicator compiles | — | 0 errors, 0 warnings, `.ex5` written | `0 errors, 0 warnings` | `MetaEditor64 /compile` with log | PASS |
-| 4 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | indicator snapshot observed | — | snapshot file appears and is readable | no chart open, indicator not attached | `position-snapshot` | AWAITING STEP 1 |
+| 4 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | indicator snapshot observed | — | snapshot file appears and is readable | `AVAILABLE`, `complete: true`, sequence 23 → 59, zero positions, which matches the empty Trade tab | `position-snapshot` | PASS |
 | 4a | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | staleness guard on a real file | — | an old snapshot is refused, not read as empty | `UNAVAILABLE`, `stale (84756.8s old, limit 30s)` | `position-snapshot` | PASS |
+| 4b | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | real-terminal dry-run, BUY | EURUSD BUY 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`; snapshot still empty | `dry-run` on the live terminal plus `position-snapshot` and `recovery` | PASS |
+| 4c | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | real-terminal dry-run, SELL | EURUSD SELL 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`; snapshot still empty | same | PASS |
 | 5 | — | — | — | position opened by hand is accepted | — | one new matching position | — | `position-snapshot` + `PositionChangeVerifier` | AWAITING STEP 2 |
-| 6 | — | — | — | guarded demo order | — | `REQUESTED` then `ACCEPTED` | — | `execute --confirm-demo` | BLOCKED BY 4 AND 5 |
+| 6 | — | — | — | guarded demo order | — | `REQUESTED` then `ACCEPTED` | — | `execute --confirm-demo` | BLOCKED BY 5 |
 
 Rows 4 to 6 stay open until a person runs the steps above. Nothing in this
 repository may mark them passed on their behalf.

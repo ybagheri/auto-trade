@@ -51,9 +51,10 @@
 - [x] Persist signal attempts and unknown execution state across restarts.
 - [x] Implement independent position-change verification logic.
 - [x] Implement a read-only MQL5 indicator for position observation without `OrderSend`.
-- [ ] Confirm the indicator snapshot on the demo terminal.
-  - Compiles on Alpari MT5 6184 with 0 errors; the attach step is a human action.
-      See [demo validation](docs/MT5_DEMO_VALIDATION.md), row 4.
+- [x] Confirm the indicator snapshot on the demo terminal.
+  - Confirmed 2026-09-28 on Alpari MT5 6184: `position-snapshot` reports
+      `AVAILABLE` with a complete, advancing snapshot. See
+      [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 4, 4a, 4b, 4c.
 
 ## Phase 6 — Desktop UI
 
