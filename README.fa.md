@@ -11,11 +11,12 @@ Auto Trade یک پلتفرم اجرای دسکتاپ ویندوز برای MetaT
 ## ویژگی‌ها
 
 - مدل‌های دامنه‌ی تایپ‌شده برای سیگنال، درخواست، نتیجه، پروفایل ترمینال، محدودیت ریسک و رخداد حسابرسی.
-- رابط provider و provider فایل JSON محلی.
+- رابط provider با provider فایل JSON محلی و provider HTTP احرازهویت‌شده‌ی لوپ‌بک.
 - موتور ریسک مستقل با فهرست نمادهای مجاز، حجم، انقضا، نرخ، اتصال و سقف پوزیشن.
 - kill switch، محدودیت demo-only، dry-run، جلوگیری از سیگنال تکراری و وضعیت صریح اجرای نامعلوم.
 - ماشین حالت اجرا با ثبت ساختاریافته‌ی انتقال‌ها.
 - کشف پروسه‌ی MT5 بر اساس مسیر فایل اجرایی و پوشه‌ی داده.
+- بسته‌ی تشخیصی (diagnostics bundle) و wizard پیکربندی برای فایل `.env`.
 - لاگ حسابرسی JSONL با چرخش فایل.
 - CLI برای diagnostics و پردازش dry-run بدون سفارش.
 - تست‌های unit و integration که به MT5 واقعی وابسته نیستند.
@@ -47,6 +48,40 @@ python -m auto_trade test-signal examples\signals\example.json
 
 برای dry-run باید زمان سیگنال به‌صورت UTC و به‌روز باشد؛ فایل نمونه ممکن است منقضی شود.
 
+## منابع سیگنال
+
+پیاده‌سازی‌شده: فایل JSON محلی، و منبع HTTP احرازهویت‌شده‌ی لوپ‌بک با دستور
+`python -m auto_trade fetch-signal`. این منبع فقط می‌خواند، به آدرس لوپ‌بک محدود
+است، توکن اجباری دارد، ریدایرکت خارج از لوپ‌بک را رد می‌کند و هیچ سفارشی ثبت
+نمی‌کند. سیگنال دریافت‌شده دقیقاً مانند فایل سیگنال، همه‌ی محدودیت‌های ریسک و
+ایمنی را طی می‌کند.
+
+```powershell
+$env:AUTO_TRADE_HTTP_SIGNAL_URL = "http://127.0.0.1:8787/signals/next"
+$env:AUTO_TRADE_HTTP_SIGNAL_TOKEN = "<token>"
+python -m auto_trade fetch-signal
+```
+
+توکن هرگز در لاگ حسابرسی یا خروجی `diagnostics` چاپ نمی‌شود و نباید در مخزن commit شود.
+
+## پیکربندی و بسته‌ی تشخیصی
+
+```powershell
+python -m auto_trade configure
+python -m auto_trade diagnostics-bundle
+```
+
+`configure` برای هر تنظیم، مقدار فعلی را به‌عنوان پیش‌فرض نشان می‌دهد، مسیر
+ترمینال یا پوشه‌ی داده‌ای که وجود ندارد را رد می‌کند، تنظیماتی را که مدیریت
+نمی‌کند حفظ می‌کند و `AUTO_TRADE_ENABLE_EXECUTION=false` می‌نویسد؛ هیچ پاسخی
+در این wizard اجرای واقعی را فعال نمی‌کند.
+
+`diagnostics-bundle` یک فایل zip شامل محیط اجرا (از جمله DPI و تعداد مانیتور)،
+پیکربندی، کشف ترمینال، مشاهده‌ی پوزیشن، دفتر اجرا، سیگنال‌های در انتظار، وضعیت
+kill switch و انتهای لاگ حسابرسی می‌سازد. این کار فقط خواندنی است و شکست کشف
+ترمینال به‌جای خطا، در فایل ثبت می‌شود. این بسته هیچ credential ندارد، اما مسیر
+ترمینال، نمادها و زمان‌بندی را آشکار می‌کند، پس عمداً به اشتراک گذاشته شود.
+
 ## ایمنی
 
 - حالت dry-run به‌صورت پیش‌فرض فعال است.
@@ -60,8 +95,11 @@ python -m auto_trade test-signal examples\signals\example.json
 
 ## آزمون
 
-- **PASS — mocked:** ۱۵ تست unit و integration اجرا شد.
+- **PASS — mocked:** ۲۱۴ تست unit و integration اجرا شد.
 - **PASS — محیط:** وجود executable، پوشه‌ی داده و پروسه‌ی MT5 تأیید شد.
+- **PASS — داشبورد:** سرور loopback با توکن برای عملیات تغییردهنده.
+- **PASS — executable:** ساخت ویندوز اجرا شد و `diagnostics`، `diagnostics-bundle`، `dry-run --mock` و داشبورد کار کردند؛ با پایتون ۳.۱۳ ساخته شده و باید روی ۳.۱۲ بازساخته شود.
+- **NOT RUN — نصب‌کننده:** تعریف Inno Setup کامپایل نشد، چون روی این ماشین نصب نیست.
 - **NOT RUN — اجرای واقعی:** هیچ BUY/SELL واقعی انجام نشد.
 - **MANUAL TEST REQUIRED:** کنترل‌های UI، DPI، انتخاب نماد و تأیید پوزیشن هنوز باید در demo بررسی شوند.
 
@@ -72,6 +110,7 @@ python -m auto_trade test-signal examples\signals\example.json
 - [پیکربندی](docs/CONFIGURATION.md)
 - [پروتکل سیگنال](docs/SIGNAL_PROTOCOL.md)
 - [یکپارچه‌سازی MT5](docs/MT5_INTEGRATION.md)
+- [بسته‌بندی](docs/PACKAGING.md)
 - [توسعه و آزمون](docs/TESTING.md)
 - [English documentation](README.md)
 

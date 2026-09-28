@@ -12,8 +12,16 @@ This project leaves local artifacts and creates ordinary broker-visible trade re
 | Kill-switch sentinel | `logs\KILL_SWITCH` | durable emergency stop |
 | Position snapshots | `<data dir>\MQL5\Files\auto_trade_positions_*.json` | read-only position evidence |
 | Local configuration | `.env` | machine-specific paths and safety flags |
+| Diagnostics bundle | a path the operator chooses | a copy of the evidence above, for a report |
 
 The position reader writes snapshots but does not write a custom log and does not send anything over the network. The files are local.
+
+A diagnostics bundle is a copy of these artifacts, written wherever the operator
+points it and therefore shareable. It contains no credential: `.env` is excluded,
+the HTTP signal token is reported only as configured or not, and the endpoint URL
+is stripped of credentials, query, and fragment. Handing the bundle to someone
+else is still a disclosure of terminal paths, symbols, volumes, and timing, so
+it should be shared deliberately.
 
 ## MT5-visible traces
 

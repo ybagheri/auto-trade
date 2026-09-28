@@ -12,11 +12,12 @@ from ..adapters.terminal import DryRunTerminalAdapter
 from ..application.ledger import JsonExecutionLedger
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
-from ..domain.exceptions import AutoTradeError
+from ..domain.exceptions import AutoTradeError, NoSignalAvailable
 from ..domain.models import AuditEvent, PositionSnapshot, TradeSignal, utc_now
 from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
 from ..infrastructure.logging import AuditLogger
+from ..infrastructure.net import safe_url_summary
 from ..infrastructure.terminal import WindowsTerminalDiscovery
 
 
@@ -27,6 +28,35 @@ def _parser() -> argparse.ArgumentParser:
     subparsers.add_parser("diagnostics", help="show environment and MT5 diagnostics")
     subparsers.add_parser("recovery", help="review pending and unknown execution records")
     subparsers.add_parser("position-snapshot", help="read MT5 positions for verification")
+    bundle = subparsers.add_parser(
+        "diagnostics-bundle",
+        help="export configuration, terminal, position, and log evidence to a zip file",
+    )
+    bundle.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="where to write the bundle; defaults to a timestamped file in the current directory",
+    )
+    configure = subparsers.add_parser(
+        "configure", help="write a reviewed .env configuration for this machine"
+    )
+    configure.add_argument(
+        "--target",
+        type=Path,
+        default=Path(".env"),
+        help="the env file to write; defaults to .env in the current directory",
+    )
+    configure.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace managed keys that already hold a different value",
+    )
+    configure.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the configuration that would be written and change nothing",
+    )
     commands = (
         ("test-signal", "parse one signal file"),
         ("dry-run", "process one signal without order execution"),
@@ -63,6 +93,16 @@ def _parser() -> argparse.ArgumentParser:
         help="override AUTO_TRADE_STRATEGY, as 'package.module:attribute'",
     )
     evaluate.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="where to write the signal; defaults to the configured signal directory",
+    )
+    fetch = subparsers.add_parser(
+        "fetch-signal",
+        help="pull one signal from the configured authenticated localhost HTTP source",
+    )
+    fetch.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -117,6 +157,10 @@ def _diagnostics(config: AppConfig) -> dict[str, object]:
         "demo_only": config.policy.demo_only,
         "allowed_symbols": sorted(config.risk.allowed_symbols),
         "max_volume": str(config.risk.max_volume),
+        # The endpoint is summarised without credentials, query, or fragment so
+        # diagnostics can never echo the configured token.
+        "http_signal_endpoint": safe_url_summary(config.http_signal_url),
+        "http_signal_token_configured": bool(config.http_signal_token),
     }
 
 
@@ -195,6 +239,189 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
                 "position_observation": position_note,
                 "signal": signal.to_dict(),
             },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _diagnostics_bundle(config: AppConfig, args: argparse.Namespace) -> int:
+    """Write one archive with everything a support report needs.
+
+    The bundle is read-only: it discovers the terminal and reads local files, and
+    it never opens an order dialog or touches an execution control.
+    """
+    from ..application.diagnostics import (
+        DiagnosticsBundle,
+        DiagnosticSubject,
+        default_bundle_name,
+    )
+    from ..application.kill_switch import FileKillSwitch
+    from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
+    from ..interfaces import kill_switch_path
+
+    subject = DiagnosticSubject(
+        profile=config.terminal_profile(),
+        signal_directory=config.signal_directory,
+        log_directory=config.log_directory,
+        policy=config.policy,
+        risk=config.risk,
+        http_signal_endpoint=safe_url_summary(config.http_signal_url),
+        http_signal_token=config.http_signal_token,
+        strategy_spec=config.strategy_spec,
+    )
+    bundle = DiagnosticsBundle(
+        subject=subject,
+        kill_switch=FileKillSwitch(kill_switch_path(config.log_directory)),
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+        position_provider=MT5FilePositionSnapshotProvider(
+            config.data_path / "MQL5" / "Files"
+        ),
+        terminal_discovery=WindowsTerminalDiscovery(),
+        application_version=_application_version(),
+    )
+    target = args.output or Path(default_bundle_name())
+    try:
+        written = bundle.export(Path(target))
+    except OSError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(
+        json.dumps(
+            {
+                "status": "EXPORTED",
+                "bundle": str(written),
+                "entries": [f"{name}.json" for name in sorted(bundle.sections)],
+                "terminal": bundle.sections["terminal"]["status"],
+                "positions": bundle.sections["positions"]["status"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _configure(config: AppConfig, args: argparse.Namespace) -> int:
+    """Ask for the machine-specific settings and write them to an env file.
+
+    Execution stays disabled in the result. The wizard has no answer that can
+    turn it on, so a fresh configuration cannot be the reason an order is sent.
+    """
+    from ..application.wizard import (
+        EXECUTION_KEY,
+        ConfigurationError,
+        WizardAnswers,
+        apply_to_file,
+        collect_answers,
+        render,
+        validate,
+    )
+
+    defaults = WizardAnswers(
+        terminal_path=str(config.terminal_path),
+        data_path=str(config.data_path),
+        instance_name=config.instance_name,
+        allowed_symbols=",".join(sorted(config.risk.allowed_symbols)),
+        max_volume=str(config.risk.max_volume),
+        max_orders_per_minute=config.risk.max_orders_per_minute,
+        expiration_seconds=config.risk.expiration_seconds,
+        signal_directory=str(config.signal_directory),
+        log_directory=str(config.log_directory),
+        dry_run=config.policy.dry_run,
+        demo_only=config.policy.demo_only,
+    )
+    print("Configure auto-trade. Press Enter to keep the value in brackets.")
+    try:
+        answers = collect_answers(_ask, defaults)
+        validate(answers)
+    except (ConfigurationError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    rendered = render(answers)
+    if args.dry_run:
+        print(rendered)
+        print(f"# nothing was written; {args.target} is unchanged")
+        return 0
+    try:
+        written = apply_to_file(answers, args.target, overwrite=args.overwrite)
+    except (ConfigurationError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(f"wrote {written}")
+    print(rendered)
+    print(
+        f"{EXECUTION_KEY} stays false. A reviewed manual edit is required before any "
+        "final execution control is reachable."
+    )
+    return 0
+
+
+def _ask(prompt: str, default: str) -> str:
+    try:
+        return input(f"{prompt}: ")
+    except EOFError:
+        # A non-interactive run must not hang waiting for an answer.
+        return default
+
+
+def _application_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return f"auto-trade {version('auto-trade')}"
+    except Exception:  # noqa: BLE001
+        return "auto-trade (version unknown)"
+
+
+def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
+    """Pull one signal from the configured HTTP source into the signal directory.
+
+    Fetching is a read: the response is written as a normal pending signal file
+    and still has to pass the risk engine, the kill switch, and every other gate
+    before anything reaches the terminal.
+    """
+    provider = config.http_signal_provider()
+    if provider is None:
+        print(
+            "ERROR: no HTTP signal source configured. Set AUTO_TRADE_HTTP_SIGNAL_URL to a "
+            "loopback URL and AUTO_TRADE_HTTP_SIGNAL_TOKEN to its token. See "
+            "docs/SIGNAL_PROTOCOL.md.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        provider.start()
+    except AutoTradeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    try:
+        signal = provider.receive()
+    except NoSignalAvailable as exc:
+        print(json.dumps({"status": "NO_SIGNAL", "detail": str(exc)}, indent=2))
+        return 0
+    except (AutoTradeError, OSError, TimeoutError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        provider.stop()
+
+    target = args.output or (config.signal_directory / f"{signal.signal_id}.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(signal.to_dict(), indent=2), encoding="utf-8")
+    AuditLogger(config.log_directory).record(
+        AuditEvent(
+            component="signal-provider",
+            event_type="received",
+            message="signal received from the configured HTTP source",
+            signal_id=signal.signal_id,
+            symbol=signal.symbol,
+            action=signal.action.value,
+            volume=signal.volume,
+        )
+    )
+    print(
+        json.dumps(
+            {"status": "RECEIVED", "written": str(target), "signal": signal.to_dict()},
             indent=2,
         )
     )
@@ -296,6 +523,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in {"status", "diagnostics"}:
         print(json.dumps(_diagnostics(config), indent=2, default=str))
         return 0
+    if args.command == "diagnostics-bundle":
+        return _diagnostics_bundle(config, args)
+    if args.command == "configure":
+        return _configure(config, args)
     if args.command == "position-snapshot":
         from ..infrastructure.automation.positions_file import MT5FilePositionSnapshotProvider
 
@@ -361,6 +592,8 @@ def main(argv: list[str] | None = None) -> int:
         return _dashboard(config, args)
     if args.command == "evaluate":
         return _evaluate(config, args)
+    if args.command == "fetch-signal":
+        return _fetch_signal(config, args)
     if args.command == "execute":
         return _execute_live(config, args)
     if args.command == "run":

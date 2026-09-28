@@ -13,7 +13,7 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 ## Features
 
 - Typed Python domain models for signals, requests, results, terminal profiles, risk limits, and audit events.
-- Provider protocol with a local JSON file signal provider.
+- Provider protocol with a local JSON file signal provider and an authenticated localhost HTTP provider.
 - Independent risk engine with symbol whitelist, volume, expiration, rate, connection, and position limits.
 - Kill switch, demo-only policy, dry-run workflow, duplicate signal protection, and explicit unknown execution state.
 - Execution state machine with logged transitions.
@@ -22,8 +22,10 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Position-change verification abstraction with a fail-closed read-only indicator snapshot provider and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - Local read-only status dashboard with a durable, token-guarded emergency stop.
-- CLI diagnostics and non-executing dry-run processing.
+- CLI diagnostics, a zipped diagnostics bundle, a configuration wizard, and
+  non-executing dry-run processing.
 - Mocked unit and integration tests that do not require MT5.
+- A Windows executable and an installer definition, see [packaging](docs/PACKAGING.md).
 
 ## Architecture
 
@@ -53,9 +55,11 @@ A signal, decision, UI click, broker acceptance, and verified position are diffe
 
 ## Supported Signal Sources
 
-Implemented: local JSON files.
+Implemented: local JSON files, and an authenticated localhost HTTP pull source
+(`fetch-signal`, loopback only, token required, redirects off loopback refused).
+See [signal protocol](docs/SIGNAL_PROTOCOL.md).
 
-Planned: authenticated localhost HTTP, WebSocket, named pipes, MT5 bridge, and other providers. No network execution API is currently exposed.
+Planned: WebSocket, named pipes, MT5 bridge, and other providers. No network execution API is exposed, and no provider can place an order.
 
 ## MT5 Integration
 
@@ -91,7 +95,6 @@ python -m pip install -e ".[dev,windows]"
 ```
 
 ## Quick Start
-## Quick Start
 
 ```powershell
 $env:AUTO_TRADE_ALLOWED_SYMBOLS = "BITCOIN"
@@ -104,12 +107,18 @@ python -m auto_trade position-snapshot
 python -m auto_trade execute --confirm-demo <signal-file>
 python -m auto_trade recovery
 python -m auto_trade evaluate --symbol BITCOIN
+python -m auto_trade fetch-signal
+python -m auto_trade diagnostics-bundle
 python -m auto_trade dashboard
 ```
 
 A signal expires at `timestamp + expiration_seconds` unless it carries an explicit
 `expiration`, so generate one with `make-signal` rather than editing the example by
 hand. `make-signal` also writes the file that the other commands read.
+
+`fetch-signal` needs `AUTO_TRADE_HTTP_SIGNAL_URL` (a loopback URL) and
+`AUTO_TRADE_HTTP_SIGNAL_TOKEN`. It performs one authenticated `GET` and writes the
+returned signal into the signal directory, where the normal gates still apply.
 
 ## Strategy Integration
 
@@ -145,6 +154,23 @@ Demo-only mode is enabled by default. The normal CLI dry-run path connects to an
 ## Configuration
 
 Copy `.env.example` to `.env` for local environment variables, or inspect `config/default.yaml`. The runtime currently reads environment variables and uses safe defaults. Never commit credentials.
+
+`python -m auto_trade configure` writes a reviewed `.env` for this machine: it
+shows the current value as the default of every question, refuses a terminal or
+data path that does not exist, keeps settings it does not manage, and writes
+`AUTO_TRADE_ENABLE_EXECUTION=false` because it has no answer that can enable a
+final execution control. See [packaging](docs/PACKAGING.md).
+
+## Diagnostics Bundle
+
+`python -m auto_trade diagnostics-bundle` writes one zip file with the
+environment (including the DPI and monitor facts UI automation depends on), the
+configuration, terminal discovery, position observation, execution ledger,
+pending signals, kill-switch state, and an audit tail. It is read-only, and a
+discovery failure is recorded rather than raised. The bundle contains no
+credentials: `.env` is excluded, the HTTP token is reported only as configured or
+not, and the endpoint URL is stripped of credentials, query, and fragment. See
+[packaging](docs/PACKAGING.md).
 
 ## Example Signal
 
@@ -189,13 +215,15 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 140 unit and integration tests executed.
+- **PASS — mocked:** 214 unit and integration tests executed.
 - **PASS — environment:** MT5 executable, data directory, and demo process were found.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
 - **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator snapshot is required.
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.
+- **PASS — executable:** the Windows build runs `diagnostics`, `diagnostics-bundle`, `dry-run --mock`, and the dashboard; built with Python 3.13 here, so rebuild on the 3.12 baseline.
+- **NOT RUN — installer:** the Inno Setup definition was never compiled, because Inno Setup is not installed here.
 
 ## Documentation
 
@@ -214,11 +242,12 @@ Current automated status:
 - [Execution](docs/EXECUTION.md)
 - [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
 - [Recovery](docs/RECOVERY.md)
+- [Packaging](docs/PACKAGING.md)
 - [Persian documentation](README.fa.md)
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). The next milestones are a reliable independent position observation method, controlled demo rejection tests, and only then a guarded live execution path.
+See [ROADMAP.md](ROADMAP.md). The next milestones are confirming the read-only indicator snapshot on a real demo terminal, observing a demo position opened by hand, and only then a guarded live execution path.
 
 ## Contributing
 

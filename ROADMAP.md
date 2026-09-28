@@ -18,7 +18,7 @@
 
 - [x] Define provider protocol.
 - [x] Implement local JSON file provider.
-- [ ] Add localhost authenticated HTTP provider.
+- [x] Add localhost authenticated HTTP provider.
 - [ ] Add WebSocket, named-pipe, and MT5 bridge providers.
 - [x] Add durable idempotency storage.
 
@@ -78,9 +78,14 @@
 
 ## Phase 9 — Packaging
 
-- [ ] Windows executable and installer.
-- [ ] Configuration wizard.
-- [ ] Diagnostics bundle export.
+- [x] Windows executable and installer.
+  - [ ] Compile the installer definition on a machine with Inno Setup 6 (not run here).
+  - [ ] Rebuild the executable on the Python 3.12 baseline (built on 3.13 here).
+- [x] Configuration wizard.
+- [x] Diagnostics bundle export.
+
+The executable was built and smoke tested; the installer definition was not
+compiled. See [packaging](docs/PACKAGING.md).
 
 ## Phase 10 — Production Hardening
 

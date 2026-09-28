@@ -7,6 +7,8 @@ __pycache__/
 /build/
 /dist/
 .venv/
+# Throwaway virtual environment created by scripts/build-exe.ps1.
+/.build/
 
 # Runtime artifacts. These must stay anchored to the repository root: an
 # unanchored "signals/" also matched the source package

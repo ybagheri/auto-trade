@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -196,3 +197,120 @@ def test_execute_refuses_when_execution_is_not_explicitly_enabled(
     code = main(["execute", "--confirm-demo", str(signal)])
 
     assert code == 2
+
+
+def test_fetch_signal_reports_a_missing_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AUTO_TRADE_HTTP_SIGNAL_URL", raising=False)
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+
+    code = main(["fetch-signal"])
+
+    assert code == 2
+
+
+def test_fetch_signal_refuses_a_non_loopback_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_URL", "http://192.168.1.10:8787/signals/next")
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "token-value")
+
+    code = main(["fetch-signal"])
+
+    assert code == 2
+    assert not (tmp_path / "signals").exists()
+
+
+def test_diagnostics_never_echo_the_configured_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_URL", "http://127.0.0.1:8787/signals/next")
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "super-secret-token")
+
+    assert main(["diagnostics"]) == 0
+
+    printed = capsys.readouterr()
+    assert "super-secret-token" not in printed.out
+    payload = json.loads(printed.out)
+    assert payload["http_signal_endpoint"] == "http://127.0.0.1:8787/signals/next"
+    assert payload["http_signal_token_configured"] is True
+
+
+def test_diagnostics_bundle_exports_an_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("AUTO_TRADE_SIGNAL_DIR", str(tmp_path / "signals"))
+    monkeypatch.setenv("AUTO_TRADE_TERMINAL_PATH", str(tmp_path / "missing-terminal64.exe"))
+    monkeypatch.setenv("AUTO_TRADE_DATA_PATH", str(tmp_path / "missing-data"))
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "super-secret-token")
+    target = tmp_path / "bundle.zip"
+
+    assert main(["diagnostics-bundle", "--output", str(target)]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "EXPORTED"
+    assert payload["terminal"] == "NOT FOUND"
+    with zipfile.ZipFile(target) as archive:
+        assert "manifest.json" in archive.namelist()
+        assert b"super-secret-token" not in target.read_bytes()
+
+
+def test_configure_writes_a_reviewed_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal = tmp_path / "terminal64.exe"
+    terminal.write_text("MZ", encoding="utf-8")
+    data = tmp_path / "data"
+    data.mkdir()
+    target = tmp_path / ".env"
+    monkeypatch.setenv("AUTO_TRADE_TERMINAL_PATH", str(terminal))
+    monkeypatch.setenv("AUTO_TRADE_DATA_PATH", str(data))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+    code = main(["configure", "--target", str(target)])
+
+    printed = capsys.readouterr()
+    assert code == 0, printed.err
+    written = target.read_text(encoding="utf-8")
+    values = dict(
+        line.partition("=")[::2] for line in written.splitlines() if "=" in line
+    )
+    assert values["AUTO_TRADE_TERMINAL_PATH"] == str(terminal)
+    assert values["AUTO_TRADE_ENABLE_EXECUTION"] == "false"
+    assert "AUTO_TRADE_ENABLE_EXECUTION=true" not in printed.out
+
+
+def test_configure_refuses_a_terminal_that_is_not_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_TERMINAL_PATH", str(tmp_path / "missing-terminal64.exe"))
+    monkeypatch.setenv("AUTO_TRADE_DATA_PATH", str(tmp_path / "data"))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+    target = tmp_path / ".env"
+
+    code = main(["configure", "--target", str(target)])
+
+    assert code == 1
+    assert not target.exists()
+
+
+def test_configure_dry_run_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    terminal = tmp_path / "terminal64.exe"
+    terminal.write_text("MZ", encoding="utf-8")
+    data = tmp_path / "data"
+    data.mkdir()
+    target = tmp_path / ".env"
+    monkeypatch.setenv("AUTO_TRADE_TERMINAL_PATH", str(terminal))
+    monkeypatch.setenv("AUTO_TRADE_DATA_PATH", str(data))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+    code = main(["configure", "--target", str(target), "--dry-run"])
+
+    assert code == 0
+    assert not target.exists()
+    assert "AUTO_TRADE_ENABLE_EXECUTION=false" in capsys.readouterr().out

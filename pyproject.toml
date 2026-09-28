@@ -19,6 +19,9 @@ dev = [
 windows = [
     "pywinauto>=0.6",
 ]
+build = [
+    "pyinstaller>=6.0",
+]
 
 [project.scripts]
 auto-trade = "auto_trade.cli:main"
