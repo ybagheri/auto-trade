@@ -86,7 +86,7 @@ The independent observation path is a read-only MQL5 indicator, not a service an
     -MetaEditor "C:\Program Files\Alpari MT5_2\MetaEditor64.exe"
 ```
 
-Attach `AutoTradePositionReader` to a chart once. It reads positions and writes a local snapshot; it contains no `OrderSend`, trade request, or custom log. MT5 may still record indicator load/attachment in its own Journal. See [position reader](docs/POSITION_READER.md).
+Attach `AutoTradePositionReader` to a chart once. It reads positions and writes a local snapshot; it contains no `OrderSend`, trade request, or custom log. MT5 may still record indicator load/attachment in its own Journal. The attach step is a human action, because MT5's grids and context menus are not exposed to UI Automation; the measured procedure and the validation record are in [demo validation](docs/MT5_DEMO_VALIDATION.md). See [position reader](docs/POSITION_READER.md).
 
 ## Installation
 
@@ -219,9 +219,11 @@ have numpy installed for unrelated reasons.
 Current automated status:
 
 - **PASS — mocked:** 271 unit and integration tests executed.
-- **PASS — environment:** MT5 executable, data directory, and demo process were found.
+- **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
+- **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings and is registered under Navigator → Indicators.
+- **PASS — staleness guard:** a real snapshot left by an earlier session is refused as `stale`, not read as an empty account.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
-- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator snapshot is required.
+- **AWAITING MANUAL STEP — position verification:** the indicator is not attached to a chart, and MT5's grids and context menus are not exposed to UI Automation, so the last click is a human action. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.
@@ -245,6 +247,7 @@ Current automated status:
 - [Execution](docs/EXECUTION.md)
 - [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
 - [Recovery](docs/RECOVERY.md)
+- [MT5 demo validation](docs/MT5_DEMO_VALIDATION.md)
 - [Packaging](docs/PACKAGING.md)
 - [Persian documentation](README.fa.md)
 

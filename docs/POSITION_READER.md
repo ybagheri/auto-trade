@@ -19,11 +19,19 @@ The indicator does not call `Print` and does not create a custom log file. MT5 i
 
 ```powershell
 .\scripts\install-position-reader.ps1 `
-    -DataPath "C:\Users\BazikadeStore\AppData\Roaming\MetaQuotes\Terminal\AF19ECCF568F855DF9D3196BBF8BF315" `
-    -MetaEditor "C:\Program Files\Alpari MT5_2\MetaEditor64.exe"
+    -DataPath "<MT5 data directory>" `
+    -MetaEditor "<path to MetaEditor64.exe in the same terminal folder>"
 ```
 
-Then in MT5 open the indicator search, select `AutoTradePositionReader`, and attach it to a chart. The snapshot should appear within a second or two.
+The script copies the source into `<data dir>\MQL5\Indicators`, compiles it, and
+fails if no `.ex5` is produced. Then in MT5 open a chart, press `Ctrl+I` or use
+the indicator button, select `AutoTradePositionReader`, and confirm with `OK`.
+The snapshot appears within a second or two.
+
+The last step is a deliberate human action: MT5's grids and context menus are not
+exposed to UI Automation, so a chart and its indicator cannot be attached without
+a hard-coded screen coordinate. See [demo validation](MT5_DEMO_VALIDATION.md) for
+the measured procedure and its record.
 
 ## Check
 

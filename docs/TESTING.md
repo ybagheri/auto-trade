@@ -11,7 +11,9 @@ mypy src tests
 ## Current executed results
 
 - **PASS — mocked:** 271 unit and integration tests passed.
-- **PASS — environment:** MT5 executable, data directory, and demo process were found.
+- **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
+- **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`.
+- **PASS — staleness guard:** `position-snapshot` refused a real snapshot from an earlier session as `stale (84756.8s old, limit 30s)` instead of reporting an empty account.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
 - **PASS — HTTP signal source:** a loopback server with a bearer token, including the refusals for a wrong token, a non-loopback URL, a redirect off loopback, an oversized body, and an unreachable endpoint.
 - **PASS — named-pipe source:** a real Win32 pipe server, including authentication, a wrong token, a non-local pipe name, an oversized line, a disconnect, and two signals in one session.
@@ -22,9 +24,9 @@ mypy src tests
 - **PASS — executable:** the Windows build runs `diagnostics`, `diagnostics-bundle`, `make-signal`, `dry-run --mock`, `configure`, and the dashboard.
 - **MANUAL — pipe and WebSocket sources end to end:** each was driven once from the command line against a local writer outside the test suite, and produced a pending signal file. No MT5 is involved in either.
 - **NOT RUN — installer:** `installer.iss` was never compiled; Inno Setup 6 is not installed here.
-- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator path is required.
+- **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA, and the chart context menu is not in the accessibility tree, so attaching the read-only indicator needs a human click. See [demo validation](MT5_DEMO_VALIDATION.md).
 - **NOT RUN — real order:** no real BUY/SELL click or broker order was attempted.
-- **MANUAL TEST REQUIRED:** attach `AutoTradePositionReader`, open a demo position, confirm the snapshot reports it, and then test broker rejection handling.
+- **MANUAL TEST REQUIRED:** attach `AutoTradePositionReader` to a chart, open a demo position by hand, confirm the snapshot reports it, and then test broker rejection handling. [demo validation](MT5_DEMO_VALIDATION.md) holds the procedure and the record.
 
 ## Test layers
 

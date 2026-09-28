@@ -52,6 +52,8 @@
 - [x] Implement independent position-change verification logic.
 - [x] Implement a read-only MQL5 indicator for position observation without `OrderSend`.
 - [ ] Confirm the indicator snapshot on the demo terminal.
+  - Compiles on Alpari MT5 6184 with 0 errors; the attach step is a human action.
+      See [demo validation](docs/MT5_DEMO_VALIDATION.md), row 4.
 
 ## Phase 6 — Desktop UI
 
@@ -74,7 +76,10 @@
 - [x] Perform demo connection, window, symbol, and dry-run checks.
 - [x] Provide a read-only MQL5 indicator position observation method.
 - [ ] Observe a demo position opened by hand and confirm verification accepts it.
+  - Requires an open chart with the indicator attached; see row 5 of
+      [demo validation](docs/MT5_DEMO_VALIDATION.md).
 - [ ] Perform actual demo order only after explicit verification criteria pass.
+  - Blocked by the two rows above; see row 6.
 
 ## Phase 9 — Packaging
 
