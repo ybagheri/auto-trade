@@ -7,7 +7,7 @@ still open with the reason it is open.
 Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 [demo validation](MT5_DEMO_VALIDATION.md) for the measured MT5 record.
 
-**State as of 2026-09-28.** `main` is green: 324 tests, `ruff` clean, `mypy
+**State as of 2026-09-28.** `main` is green: 333 tests, `ruff` clean, `mypy
 --strict` clean. Every claim below was either executed on this machine or is
 labelled as not run.
 
@@ -92,7 +92,7 @@ infrastructure.
 
 | Item | Blocked by |
 | --- | --- |
-| Recovery after terminal restart | partly done: an order attempt survives a restart through the ledger, and the reader refuses to guess after a terminal restart, but no test covers a crash between the click and the observation |
+| Recovery after terminal restart | partly done: a crash between the click and the observation is covered end to end, including the durable `REQUESTED` record, the refusal of the same signal after a restart, and settlement only by the operator. Still open: the same sequence against a real terminal that is killed mid-order |
 | Structured metrics and latency observability | nothing; the audit log is structured JSONL but has no counters and no timing summary |
 | Authenticated local APIs | nothing; the dashboard is loopback-only with a control token, and the HTTP signal source is a client, not an API |
 | Reliability across DPI, monitors, focus loss, dialogs | needs a second machine, or an MT5 build on this one that can be resized and moved; the focus-loss defect found on 2026-09-28 is now covered by the window manager bringing the terminal forward |

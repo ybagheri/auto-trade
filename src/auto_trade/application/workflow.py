@@ -55,7 +55,9 @@ class ExecutionWorkflow:
     def execute(self, signal: TradeSignal) -> ExecutionResult:
         execution_id = str(uuid4())
         machine = ExecutionStateMachine(
-            lambda state: self._record(execution_id, signal, "state", state.value)
+            lambda state: self._record(
+                execution_id, signal, "state", state.value, state=state.value
+            )
         )
         self._record(execution_id, signal, "received", "signal received")
         try:

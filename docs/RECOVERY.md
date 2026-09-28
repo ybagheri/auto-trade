@@ -10,6 +10,30 @@ The application writes `logs/idempotency.json` as a durable execution ledger. Ea
 - A different execution ID cannot replace an existing ledger entry.
 - A corrupt or unreadable ledger fails closed with `UNKNOWN_EXECUTION`.
 
+## A crash between the click and the observation
+
+The dangerous window is the one after the final control has been used and before
+an independent observation exists: the order may have been filled, and the
+process that would have recorded the proof is gone. The attempt is written to the
+ledger *before* the click, so the window is recoverable by design.
+
+What is pinned by `tests/integration/test_crash_recovery.py`:
+
+- the ledger holds `REQUESTED` with no result and no `order_reference`, so
+  nothing on disk claims an outcome that was never observed;
+- a proved fill whose result never reached disk is still **not** recorded as
+  `ACCEPTED`, because a partial write must not be completed by inference;
+- a restarted process refuses the same signal as `duplicate signal id` before the
+  order dialog is ever opened, so a crash cannot become a second order;
+- the refused retry has a new execution ID and cannot overwrite the pending
+  record, so the operator still sees the attempt in `recovery`;
+- a snapshot written before a terminal restart is refused as stale rather than
+  read as the current account.
+
+What is not automated, and why: killing a real terminal mid-order needs a person
+and a running MT5 build. The automated test proves the durable behaviour, not
+the terminal's.
+
 The ledger is local operational data and is not a substitute for broker-side position verification. Operators must compare pending records with the MT5 demo account before clearing or resolving them.
 
 ## Reviewing

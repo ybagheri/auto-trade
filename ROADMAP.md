@@ -115,6 +115,14 @@ compiled. See [packaging](docs/PACKAGING.md).
 ## Phase 10 — Production Hardening
 
 - [ ] Recovery after terminal/application restart.
+  - A crash between the click and the observation is now covered: the durable
+      record stays `REQUESTED` with no result, a restarted process refuses the
+      same signal as a duplicate without touching the terminal, the refused
+      retry cannot overwrite the record, and only `reconcile` settles it. A
+      proved fill whose result never reached disk is still not recorded as
+      `ACCEPTED`. See `tests/integration/test_crash_recovery.py`.
+  - Still open: the same sequence against a real terminal restart, which needs
+      a person to kill the terminal mid-order.
 - [ ] Structured metrics and latency observability.
 - [ ] Security review and dependency review.
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.

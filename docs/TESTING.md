@@ -10,7 +10,8 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 324 unit and integration tests passed.
+- **PASS — mocked:** 333 unit and integration tests passed.
+- **PASS — crash between the click and the observation:** a process that dies after the final control is used leaves the durable record `REQUESTED` with no result and no `order_reference`; a restarted process refuses the same signal as a duplicate without opening the order dialog; the refused retry cannot overwrite the pending record; `recovery` lists it for review and only `reconcile` settles it; and a fill that was observed but whose result never reached disk is still not recorded as `ACCEPTED`. A snapshot written before a terminal restart is refused as stale rather than read as the current account.
 - **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
 - **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`, which is registered in the Navigator and attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live snapshot whose sequence advances and whose `complete` flag is true.
@@ -34,7 +35,7 @@ mypy src tests
 ## Test layers
 
 - Unit: parsing, validation, risk, state machine, duplicate protection, audit, network policy, and packaging assets.
-- Integration: local provider to application workflow.
+- Integration: local provider to application workflow, and a crash between the click and the observation.
 - Frozen build: `diagnostics`, `diagnostics-bundle`, and a served dashboard page, which is what proves the package data was collected.
 - Future UI: controlled terminal/window/control tests.
 - Future E2E: only the specified MT5 demo account, with recorded date, terminal path, account type, symbol, action, volume, expected result, actual result, verification method, and status.
