@@ -117,6 +117,16 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required acknowledgement that this may place a demo order",
     )
+    close = subparsers.add_parser(
+        "close-position",
+        help="close one position this application opened, and prove it closed",
+    )
+    close.add_argument("ticket", help="position ticket as reported by the verifier")
+    close.add_argument(
+        "--confirm-demo",
+        action="store_true",
+        help="required acknowledgement that this closes a real demo position",
+    )
     subparsers.add_parser("run", help="run the configured signal loop")
     dashboard = subparsers.add_parser(
         "dashboard", help="serve the local read-only status dashboard"
@@ -438,6 +448,81 @@ def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
     return 0
 
 
+def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
+    """Close one position by ticket, if the gates and the ledger allow it.
+
+    The position must be one this application opened. A ticket that is not in
+    the execution ledger belongs to somebody else, and this command refuses it
+    rather than closing a human's position.
+    """
+    from ..application.kill_switch import FileKillSwitch
+    from ..infrastructure.automation.execution import ExecutionGate
+    from ..interfaces import kill_switch_path
+
+    if not args.confirm_demo:
+        print("ERROR: --confirm-demo is required", file=sys.stderr)
+        return 2
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    ledger = JsonExecutionLedger(config.log_directory / "idempotency.json")
+    known = {str(record.get("order_reference") or "") for record in ledger.records()}
+    if args.ticket not in known:
+        print(
+            f"ERROR: ticket {args.ticket} is not in the execution ledger, so it is not a "
+            "position this application opened; close it by hand",
+            file=sys.stderr,
+        )
+        return 2
+    if not config.policy.execution_enabled and not _flag_enabled("AUTO_TRADE_ENABLE_CLOSE"):
+        print(
+            "ERROR: closing is disabled; set AUTO_TRADE_ENABLE_CLOSE=true",
+            file=sys.stderr,
+        )
+        return 2
+    terminal = MT5DesktopAdapter(
+        config.terminal_profile(),
+        gate=ExecutionGate(
+            enabled=config.policy.execution_enabled,
+            dry_run=config.policy.dry_run,
+            demo_only=config.policy.demo_only,
+            kill_switch_active=kill_switch.active,
+        ),
+        close_gate=config.close_position_gate(kill_switch.active),
+    )
+    try:
+        terminal.connect()
+        result = terminal.close_position(args.ticket)
+    except (AutoTradeError, OSError, TimeoutError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    AuditLogger(config.log_directory).record(
+        AuditEvent(
+            component="position-close",
+            event_type="result",
+            message=result.message,
+            state=result.state,
+            action=f"CLOSE {args.ticket}",
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "status": result.status.value,
+                "state": result.state,
+                "message": result.message,
+                "position_id": result.order_reference,
+            },
+            indent=2,
+        )
+    )
+    return 0 if result.status.value == "CLOSED" else 1
+
+
+def _flag_enabled(name: str) -> bool:
+    import os
+
+    return os.getenv(name, "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _dashboard(config: AppConfig, args: argparse.Namespace) -> int:
     from ..application.kill_switch import FileKillSwitch
     from ..interfaces import StatusReporter, build_server, kill_switch_path
@@ -606,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
         return _fetch_signal(config, args)
     if args.command == "execute":
         return _execute_live(config, args)
+    if args.command == "close-position":
+        return _close_position(config, args)
     if args.command == "run":
         print("run is not enabled until a verified MT5 desktop adapter is implemented")
         return 2

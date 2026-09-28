@@ -9,6 +9,7 @@ from ...domain.enums import ConfirmationPolicy
 from ...domain.exceptions import SignalSourceError
 from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
 from ...domain.protocols import SignalProvider
+from ..automation.closing import CloseGate
 from ..signals import HttpSignalProvider, NamedPipeSignalProvider, WebSocketSignalProvider
 from .env_file import load_env_file
 
@@ -106,6 +107,20 @@ class AppConfig:
             terminal_path=str(self.terminal_path),
             data_path=str(self.data_path),
             instance_name=self.instance_name,
+        )
+
+    def close_position_gate(self, kill_switch_active: bool) -> CloseGate:
+        """Whether a position close may be used.
+
+        Closing has its own opt-in. It is never reachable because an order was
+        allowed, and it is refused while dry-run, while the kill switch is
+        engaged, or when the demo-only policy is not met.
+        """
+        return CloseGate(
+            enabled=_flag("AUTO_TRADE_ENABLE_CLOSE", "false"),
+            dry_run=self.policy.dry_run,
+            demo_only=self.policy.demo_only,
+            kill_switch_active=kill_switch_active,
         )
 
     def http_signal_provider(self) -> HttpSignalProvider | None:

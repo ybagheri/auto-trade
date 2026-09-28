@@ -24,6 +24,14 @@ from ...domain.models import (
     VerificationEvidence,
 )
 from ..terminal.discovery import WindowsTerminalDiscovery
+from .closing import (
+    CLOSE_MENU_ITEM_ID,
+    CLOSE_MENU_ITEM_NAME,
+    TRADE_LIST_ID,
+    CloseGate,
+    only_close_entry,
+    position_row,
+)
 from .execution import (
     ExecutionGate,
     assert_action_supported,
@@ -35,7 +43,17 @@ from .execution import (
 )
 from .positions_file import MT5FilePositionSnapshotProvider
 
+MENU_OPEN_SECONDS = 5.0
+POPUP_MENU_CLASS = "#32768"
+
 _ELEMENT_GONE: tuple[type[BaseException], ...] | None = None
+
+
+def _require_pywinauto() -> Any:
+    try:
+        return importlib.import_module("pywinauto")
+    except ImportError as exc:
+        raise AutomationError("pywinauto is required for real terminal inspection") from exc
 
 
 def _element_gone() -> tuple[type[BaseException], ...]:
@@ -237,6 +255,141 @@ class MT5WindowManager:
         except _element_gone():
             return False
 
+    # -- the trade grid, for closing a position ---------------------------
+
+    def trade_rows(self) -> list[Any]:
+        """The rows the Trade tab currently shows, in display order.
+
+        The grid is a real list view, so rows and their rectangles are visible
+        through the accessibility tree, but its cell text is not. A row is
+        therefore identified by its position in the list and only when the list
+        is unambiguous, never by guessing from a pixel.
+        """
+        window = self._window
+        if window is None:
+            raise AutomationError("MT5 window is not connected")
+        lists = [
+            control
+            for control in window.descendants()
+            if control.element_info.control_type == "List"
+            and control.element_info.automation_id == TRADE_LIST_ID
+        ]
+        if len(lists) != 1:
+            raise AutomationError(
+                f"the Trade grid was not uniquely identifiable ({len(lists)} lists)"
+            )
+        rows: list[Any] = self._guard(
+            "trade grid",
+            lambda: [
+                control
+                for control in lists[0].descendants()
+                if control.element_info.control_type == "ListItem"
+            ],
+        )
+        return rows
+
+    def open_row_context_menu(self, row: Any) -> list[tuple[str, str]]:
+        """Right-click *row* and return the menu entries as (name, id) pairs.
+
+        The menu is a standard popup, so its entries are read through the
+        accessibility tree by name. Nothing is chosen here: the caller decides
+        whether an entry is the one it is allowed to use.
+        """
+        pywinauto = _require_pywinauto()
+        before = {
+            window.handle
+            for window in pywinauto.Desktop(backend="win32").windows()
+            if window.class_name() == POPUP_MENU_CLASS
+        }
+        row.click_input(button="right")
+        deadline = time.monotonic() + MENU_OPEN_SECONDS
+        popup = None
+        while time.monotonic() < deadline:
+            appeared = [
+                window
+                for window in pywinauto.Desktop(backend="win32").windows()
+                if window.class_name() == POPUP_MENU_CLASS and window.handle not in before
+            ]
+            if len(appeared) == 1:
+                popup = appeared[0]
+                break
+            if len(appeared) > 1:
+                raise AutomationError("more than one context menu appeared; refusing to guess")
+            time.sleep(0.2)
+        if popup is None:
+            raise AutomationError("the row context menu did not appear")
+        try:
+            entries = [
+                (
+                    str(control.element_info.name or "").strip(),
+                    str(control.element_info.automation_id or ""),
+                )
+                for control in pywinauto.Desktop(backend="uia")
+                .window(handle=popup.handle)
+                .descendants()
+                if control.element_info.control_type == "MenuItem"
+            ]
+        finally:
+            # The menu is dismissed on every path, so a refusal never leaves it
+            # open over the account.
+            self._dismiss_menu(pywinauto)
+        if not entries:
+            raise AutomationError("the row context menu exposed no entries")
+        return entries
+
+    def click_row_menu_entry(
+        self, row: Any, name: str, control_id: str
+    ) -> None:
+        """Open the row's menu and click the one entry that matches name and id."""
+        pywinauto = _require_pywinauto()
+        before = {
+            window.handle
+            for window in pywinauto.Desktop(backend="win32").windows()
+            if window.class_name() == POPUP_MENU_CLASS
+        }
+        row.click_input(button="right")
+        deadline = time.monotonic() + MENU_OPEN_SECONDS
+        popup = None
+        while time.monotonic() < deadline:
+            appeared = [
+                window
+                for window in pywinauto.Desktop(backend="win32").windows()
+                if window.class_name() == POPUP_MENU_CLASS and window.handle not in before
+            ]
+            if len(appeared) == 1:
+                popup = appeared[0]
+                break
+            if len(appeared) > 1:
+                self._dismiss_menu(pywinauto)
+                raise AutomationError("more than one context menu appeared; refusing to guess")
+            time.sleep(0.2)
+        if popup is None:
+            raise AutomationError("the row context menu did not appear")
+        try:
+            matches = [
+                control
+                for control in pywinauto.Desktop(backend="uia")
+                .window(handle=popup.handle)
+                .descendants()
+                if control.element_info.control_type == "MenuItem"
+                and str(control.element_info.name or "").split("\t")[0].strip() == name
+                and str(control.element_info.automation_id or "") == control_id
+            ]
+            if len(matches) != 1:
+                raise AutomationError(
+                    f"menu entry {name!r} (id {control_id}) matched {len(matches)} elements; "
+                    "nothing was clicked"
+                )
+            matches[0].click_input()
+        finally:
+            self._dismiss_menu(pywinauto)
+
+    @staticmethod
+    def _dismiss_menu(pywinauto: Any) -> None:
+        pywinauto.keyboard.send_keys("{ESC}")
+        time.sleep(0.2)
+        pywinauto.keyboard.send_keys("{ESC}")
+
 
 class MT5DesktopAdapter:
     def __init__(
@@ -245,10 +398,12 @@ class MT5DesktopAdapter:
         window_manager: MT5WindowManager | None = None,
         position_provider: Any | None = None,
         gate: ExecutionGate | None = None,
+        close_gate: CloseGate | None = None,
     ) -> None:
         self.profile = profile
         self.window_manager = window_manager or MT5WindowManager()
         self.gate = gate if gate is not None else ExecutionGate()
+        self.close_gate = close_gate if close_gate is not None else CloseGate()
         if position_provider is None:
             position_provider = MT5FilePositionSnapshotProvider(
                 Path(profile.data_path) / "MQL5" / "Files"
@@ -256,6 +411,7 @@ class MT5DesktopAdapter:
         self.position_provider = position_provider
         self.connected = False
         self.verification_timeout_seconds = 5.0
+        self.close_timeout_seconds = 10.0
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
         self._baseline: tuple[PositionSnapshot, ...] | None = None
@@ -438,4 +594,96 @@ class MT5DesktopAdapter:
         )
 
     def close_position(self, position_id: str) -> ExecutionResult:
-        raise AutomationError("real MT5 position closing is not implemented")
+        """Close one position and prove it with an independent observation.
+
+        The click is an action; the closed position is observed. The account
+        carries no `closed` state in the snapshot, so a close is accepted only
+        when the ticket that was open at the start of this call is gone from a
+        later reading, and a position that merely changed would not be mistaken
+        for a closed one.
+        """
+        ticket = str(position_id).strip()
+        refusal = self.close_gate.refusal()
+        if refusal:
+            return self._close_refused(refusal)
+        if not self.connected:
+            return self._close_refused("MT5 terminal is not connected")
+        try:
+            observed = self.capture_positions()
+        except PositionSnapshotUnavailable as exc:
+            return self._close_unknown(
+                f"position observation unavailable before closing: {exc}"
+            )
+        before = [position for position in observed if position.position_id == ticket]
+        if not before:
+            return self._close_refused(
+                f"position {ticket} is not in the observed snapshot; refusing to close "
+                "something this application cannot see"
+            )
+        if len(observed) != 1:
+            return self._close_refused(
+                f"{len(observed)} positions are open and the trade grid exposes no row "
+                "text, so the intended one cannot be identified; close it by hand"
+            )
+        try:
+            rows = self.window_manager.trade_rows()
+            row = position_row(rows)
+            entries = self.window_manager.open_row_context_menu(row)
+            only_close_entry(entries)
+            self.window_manager.click_row_menu_entry(
+                row, CLOSE_MENU_ITEM_NAME, CLOSE_MENU_ITEM_ID
+            )
+        except LookupError as exc:
+            return self._close_refused(f"refusing to close: {exc}")
+        except AutomationError as exc:
+            return self._close_unknown(f"the close control could not be used: {exc}")
+
+        deadline = time.monotonic() + self.close_timeout_seconds
+        while True:
+            try:
+                after = self.capture_positions()
+            except PositionSnapshotUnavailable as exc:
+                if time.monotonic() >= deadline:
+                    return self._close_unknown(
+                        f"the close was used and the position could not be observed: {exc}",
+                        ticket,
+                    )
+                time.sleep(0.25)
+                continue
+            if all(position.position_id != ticket for position in after):
+                return ExecutionResult(
+                    execution_id="",
+                    signal_id="",
+                    status=ExecutionStatus.CLOSED,
+                    state=ExecutionState.POSITION_CLOSED.value,
+                    message=(
+                        f"position {ticket} is no longer present in the observed "
+                        f"snapshot ({len(before)} before, {len(after)} after)"
+                    ),
+                    order_reference=ticket,
+                )
+            if time.monotonic() >= deadline:
+                return self._close_unknown(
+                    f"position {ticket} is still present after the close control was used",
+                    ticket,
+                )
+            time.sleep(0.25)
+
+    def _close_refused(self, reason: str) -> ExecutionResult:
+        return ExecutionResult(
+            execution_id="",
+            signal_id="",
+            status=ExecutionStatus.REJECTED,
+            state=ExecutionState.POSITION_CLOSE_REFUSED.value,
+            message=reason,
+        )
+
+    def _close_unknown(self, reason: str, ticket: str = "") -> ExecutionResult:
+        return ExecutionResult(
+            execution_id="",
+            signal_id="",
+            status=ExecutionStatus.UNKNOWN,
+            state=ExecutionState.UNKNOWN_EXECUTION.value,
+            message=reason,
+            order_reference=ticket or None,
+        )
