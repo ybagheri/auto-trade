@@ -10,7 +10,7 @@ mypy src tests
 
 ## Current executed results
 
-- **PASS — mocked:** 307 unit and integration tests passed.
+- **PASS — mocked:** 324 unit and integration tests passed.
 - **PASS — environment:** Alpari MT5 build 6184, its data directory, and the running `Alpari-MT5-Demo` process were found; `diagnostics` reports `found`.
 - **PASS — indicator build:** `MetaEditor64 /compile` reported 0 errors and 0 warnings for `AutoTradePositionReader`, which is registered in the Navigator and attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live snapshot whose sequence advances and whose `complete` flag is true.

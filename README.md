@@ -4,6 +4,11 @@
 
 A safety-first Windows desktop execution bridge for MetaTrader 5. The project separates signal generation from desktop execution and provides a guarded, fail-closed UI execution path.
 
+> **Where the project stands:** [docs/STATUS.md](docs/STATUS.md) is the page to
+> read first. It records what has been run and observed on a real demo
+> terminal, what is refused on purpose, and what is still open with the reason
+> each item is open.
+
 > **Important safety and compliance notice**
 >
 > Automated trading, desktop automation, external trade execution, and connected signal sources may be restricted by a broker, prop firm, account provider, or applicable terms. Users are responsible for confirming that their intended use is permitted. This project does not claim that using the MT5 desktop interface makes an order “manual,” and it does not make claims about any provider’s policy.
@@ -107,7 +112,9 @@ python -m auto_trade dry-run --mock examples\signals\example.json
 python -m auto_trade dry-run examples\signals\example.json
 python -m auto_trade position-snapshot
 python -m auto_trade execute --confirm-demo <signal-file>
+python -m auto_trade close-position <ticket> --confirm-demo
 python -m auto_trade recovery
+python -m auto_trade reconcile <signal-id> --observed "what you saw"
 python -m auto_trade evaluate --symbol BITCOIN
 python -m auto_trade fetch-signal
 python -m auto_trade diagnostics-bundle
@@ -218,7 +225,7 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 307 unit and integration tests executed.
+- **PASS — mocked:** 324 unit and integration tests executed.
 - **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
 - **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to the `EURUSD,M5` chart.
 - **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position.
@@ -236,6 +243,7 @@ Current automated status:
 ## Documentation
 
 - [Architecture assessment](docs/ARCHITECTURE_ASSESSMENT.md)
+- [Project status](docs/STATUS.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Signal protocol](docs/SIGNAL_PROTOCOL.md)

@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from ..adapters.terminal import DryRunTerminalAdapter
-from ..application.ledger import JsonExecutionLedger
+from ..application.ledger import RECONCILED, JsonExecutionLedger, LedgerError
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError, NoSignalAvailable, SignalSourceError
@@ -27,6 +27,16 @@ def _parser() -> argparse.ArgumentParser:
     subparsers.add_parser("status", help="show configured safety status")
     subparsers.add_parser("diagnostics", help="show environment and MT5 diagnostics")
     subparsers.add_parser("recovery", help="review pending and unknown execution records")
+    reconcile = subparsers.add_parser(
+        "reconcile",
+        help="settle an attempt this application could not prove, on an operator's word",
+    )
+    reconcile.add_argument("signal_id", help="the signal id of the attempt, as recorded")
+    reconcile.add_argument(
+        "--observed",
+        required=True,
+        help="what the operator saw on the account; recorded as their assertion",
+    )
     subparsers.add_parser("position-snapshot", help="read MT5 positions for verification")
     bundle = subparsers.add_parser(
         "diagnostics-bundle",
@@ -659,8 +669,29 @@ def main(argv: list[str] | None = None) -> int:
         review = {
             "pending": [record for record in records if record.get("status") == "REQUESTED"],
             "unknown": [record for record in records if record.get("status") == "UNKNOWN"],
+            "reconciled": [
+                record for record in records if record.get("status") == RECONCILED
+            ],
         }
         print(json.dumps(review, indent=2, default=str))
+        return 0
+    if args.command == "reconcile":
+        ledger = JsonExecutionLedger(config.log_directory / "idempotency.json")
+        try:
+            record = ledger.reconcile(args.signal_id, args.observed)
+        except LedgerError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        AuditLogger(config.log_directory).record(
+            AuditEvent(
+                component="reconcile",
+                event_type="result",
+                message=record["message"],
+                signal_id=args.signal_id,
+                state=str(record.get("state", "")),
+            )
+        )
+        print(json.dumps(record, indent=2, default=str))
         return 0
     if args.command == "make-signal":
         now = utc_now()

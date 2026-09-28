@@ -95,7 +95,7 @@ kill switch و انتهای لاگ حسابرسی می‌سازد. این کار
 
 ## آزمون
 
-- **PASS — mocked:** ۲۸۲ تست unit و integration اجرا شد.
+- **PASS — mocked:** ۳۲۴ تست unit و integration اجرا شد.
 - **PASS — محیط:** ترمینال Alpari MT5 نسخه ۶۱۸۴، پوشه‌ی داده و پروسه‌ی در حال اجرای `Alpari-MT5-Demo` پیدا و توسط کد خودِ پروژه شناسایی شدند.
 - **PASS — ساخت اندیکاتور:** `AutoTradePositionReader` با ۰ خطا و ۰ هشدار کامپایل شد، در Navigator ثبت شد و به چارت `EURUSD,M5` متصل است.
 - **PASS — snapshot پوزیشن:** `position-snapshot` وضعیت `AVAILABLE` را از یک snapshot زنده و کامل گزارش می‌کند و حساب در حال حاضر پوزیشن بازی ندارد.

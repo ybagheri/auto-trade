@@ -1,5 +1,13 @@
 # Roadmap
 
+**State as of 2026-09-28:** phases 0 to 9 are complete apart from the items
+marked below, phase 10 is open, and every unchecked item in this file is
+explained in [project status](docs/STATUS.md) with what blocks it. The two
+controls that change an account were each exercised on a real Alpari MT5 demo
+terminal and both were accepted: `ACCEPTED` for an order, `CLOSED` for a
+position. Read [demo validation](docs/MT5_DEMO_VALIDATION.md) for the measured
+record.
+
 ## Phase 0 — Repository and Architecture
 
 - [x] Inspect repository and Git state.
@@ -89,8 +97,9 @@
 - [x] Perform actual demo order only after explicit verification criteria pass.
   - The first attempt found three defects after the click, all fixed; the second
       returned `ACCEPTED` with `order_reference` and evidence.
-- [ ] Reconcile an execution record an operator later proved, without editing the
-      ledger by hand. See the open `UNKNOWN` record in the demo validation record.
+- [x] Reconcile an execution record an operator later proved, without editing the
+      ledger by hand. See [recovery](docs/RECOVERY.md); the `UNKNOWN` record from
+      the first order attempt was settled with it.
 
 ## Phase 9 — Packaging
 

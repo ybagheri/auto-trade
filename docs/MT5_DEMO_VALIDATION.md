@@ -157,8 +157,9 @@ closed by hand; this project does not close positions.
 
 `logs\idempotency.json` still holds the first attempt as `UNKNOWN`. That is
 correct history: the application could not prove that outcome, and it was proven
-later by looking. Reconciling such a record from the outside is not implemented,
-and is listed under Phase 10.
+later by looking. It was settled with `reconcile`, which records the operator's
+assertion and never presents it as an observation this application made; see
+[recovery](RECOVERY.md).
 
 ## Step 3 — guarded demo order (done 2026-09-28, see the record)
 

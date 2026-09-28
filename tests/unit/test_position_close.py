@@ -17,6 +17,7 @@ from auto_trade.domain.enums import ExecutionStatus
 from auto_trade.domain.exceptions import AutomationError, PositionSnapshotUnavailable
 from auto_trade.domain.models import PositionSnapshot, TerminalProfile
 from auto_trade.infrastructure.automation import MT5DesktopAdapter, MT5WindowManager
+from auto_trade.infrastructure.automation import window_manager as window_manager_module
 from auto_trade.infrastructure.automation.closing import (
     CLOSE_MENU_ITEM_ID,
     CLOSE_MENU_ITEM_NAME,
@@ -357,3 +358,167 @@ def test_one_row_is_the_position_and_two_are_position_plus_summary() -> None:
 def test_any_other_row_count_is_refused(rows: list[str]) -> None:
     with pytest.raises(LookupError, match="refusing to guess"):
         position_row(rows)
+
+
+# -- focus loss, which cost one live attempt ---------------------------
+
+
+class FakeRect:
+    def __init__(self, left: int, top: int, right: int, bottom: int) -> None:
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+
+    def width(self) -> int:
+        return self.right - self.left
+
+    def height(self) -> int:
+        return self.bottom - self.top
+
+
+class FakeWindow:
+    def __init__(self) -> None:
+        self.focused = 0
+        self.bounds = FakeRect(0, 0, 1400, 800)
+
+    def set_focus(self) -> None:
+        self.focused += 1
+
+    def rectangle(self) -> FakeRect:
+        return self.bounds
+
+
+class Popup:
+    def __init__(self, handle: int) -> None:
+        self.handle = handle
+        self.class_name_value = "#32768"
+
+    def class_name(self) -> str:
+        return self.class_name_value
+
+
+class FakeDesktop:
+    def __init__(self, popups: list[Popup]) -> None:
+        self._popups = popups
+        self.calls = 0
+
+    def windows(self) -> list[Popup]:
+        self.calls += 1
+        # The first read is the "before" snapshot, taken before the right click.
+        return [] if self.calls == 1 else list(self._popups)
+
+    def window(self, handle: int) -> Any:
+        raise AssertionError("the tests never read menu entries directly")
+
+
+class FakeKeyboard:
+    def __init__(self, keys: list[str]) -> None:
+        self.keys = keys
+
+    def send_keys(self, keys: str) -> None:
+        self.keys.append(keys)
+
+
+class FakePywinauto:
+    def __init__(self, popups: list[Popup]) -> None:
+        self.desktop = FakeDesktop(popups)
+        self.keys: list[str] = []
+        self.keyboard = FakeKeyboard(self.keys)
+
+    def Desktop(self, backend: str) -> FakeDesktop:  # noqa: N802
+        return self.desktop
+
+
+class FocusedRow(FakeRow):
+    def __init__(self, rect: FakeRect) -> None:
+        super().__init__()
+        self._rect = rect
+        self.window_focused_when_clicked: int | None = None
+
+    def rectangle(self) -> FakeRect:
+        return self._rect
+
+    def click_input(self, button: str = "left", pressed: str = "") -> None:
+        self.clicks += 1
+
+
+class FakeTime:
+    """A clock that advances on every read, so no test waits for a real deadline."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        self.now += 0.5
+        return self.now
+
+    def sleep(self, _seconds: float) -> None:
+        return
+
+
+def install_fake_pywinauto(
+    monkeypatch: pytest.MonkeyPatch, popups: list[Popup]
+) -> FakePywinauto:
+    fake = FakePywinauto(popups)
+    monkeypatch.setattr(
+        window_manager_module, "_require_pywinauto", lambda: fake, raising=True
+    )
+    monkeypatch.setattr(window_manager_module, "time", FakeTime())
+    return fake
+
+
+def test_the_terminal_is_focused_before_a_row_is_clicked(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row click is a screen coordinate, so something else may be in front."""
+    manager = MT5WindowManager()
+    window = FakeWindow()
+    manager._window = window
+    install_fake_pywinauto(monkeypatch, [Popup(101)])
+
+    with manager.row_context_menu(FocusedRow(FakeRect(100, 600, 900, 620))):
+        pass
+
+    assert window.focused == 1
+
+
+def test_a_row_outside_the_window_is_refused(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = MT5WindowManager()
+    window = FakeWindow()
+    window.bounds = FakeRect(0, 0, 1400, 800)
+    manager._window = window
+    install_fake_pywinauto(monkeypatch, [Popup(101)])
+    off_screen = FocusedRow(FakeRect(2000, 600, 2600, 620))
+
+    with pytest.raises(AutomationError, match="not inside the connected window"):
+        manager.row_context_menu(off_screen)
+
+    assert off_screen.clicks == 0
+
+
+def test_two_menus_appearing_is_refused(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = MT5WindowManager()
+    manager._window = FakeWindow()
+    install_fake_pywinauto(monkeypatch, [Popup(101), Popup(102)])
+
+    with pytest.raises(AutomationError, match="more than one context menu"):
+        manager.row_context_menu(FocusedRow(FakeRect(100, 600, 900, 620)))
+
+
+def test_a_menu_is_dismissed_on_every_exit(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = MT5WindowManager()
+    manager._window = FakeWindow()
+    fake = install_fake_pywinauto(monkeypatch, [Popup(101)])
+
+    with pytest.raises(RuntimeError):
+        with manager.row_context_menu(FocusedRow(FakeRect(100, 600, 900, 620))):
+            raise RuntimeError("boom")
+
+    assert fake.keys == ["{ESC}", "{ESC}"]

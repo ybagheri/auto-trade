@@ -1,6 +1,6 @@
 # Contributing
 
-1. Inspect `git status` and recent history before changing a major area.
+1. Inspect `git status` and recent history before changing a major area. Read [docs/STATUS.md](docs/STATUS.md) first: it records what has actually been run, what is refused on purpose, and what is open.
 2. Keep domain logic independent from Windows UI automation.
 3. Add or update tests for parsing, risk, state transitions, and safety behavior.
 4. Run `.\scripts\test.ps1`, which runs `pytest`, `ruff`, and `mypy src tests` and fails on the first error. It also puts `typestubs` on `MYPYPATH`; see the note below before running `mypy` by hand.
