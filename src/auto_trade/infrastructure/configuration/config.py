@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ...domain.enums import ConfirmationPolicy
 from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
+from ..signals import HttpSignalProvider
 from .env_file import load_env_file
 
 
@@ -24,6 +25,8 @@ class AppConfig:
     policy: ExecutionPolicy
     risk: RiskLimits
     strategy_spec: str = ""
+    http_signal_url: str = ""
+    http_signal_token: str = ""
 
     @classmethod
     def from_env(cls) -> AppConfig:
@@ -68,6 +71,10 @@ class AppConfig:
                 execution_enabled=_flag("AUTO_TRADE_ENABLE_EXECUTION", "false"),
             ),
             strategy_spec=os.getenv("AUTO_TRADE_STRATEGY", "").strip(),
+            # The token is read from the environment and is never logged, printed
+            # by diagnostics, or written to an audit record.
+            http_signal_url=os.getenv("AUTO_TRADE_HTTP_SIGNAL_URL", "").strip(),
+            http_signal_token=os.getenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "").strip(),
             risk=RiskLimits(
                 allowed_symbols=allowed,
                 max_volume=Decimal(os.getenv("AUTO_TRADE_MAX_VOLUME", "1.0")),
@@ -87,3 +94,13 @@ class AppConfig:
             data_path=str(self.data_path),
             instance_name=self.instance_name,
         )
+
+    def http_signal_provider(self) -> HttpSignalProvider | None:
+        """Return the configured HTTP signal source, or ``None`` when unset.
+
+        The provider is returned unstarted: it still refuses a non-loopback or
+        unauthenticated source when it is started.
+        """
+        if not self.http_signal_url:
+            return None
+        return HttpSignalProvider(self.http_signal_url, self.http_signal_token)

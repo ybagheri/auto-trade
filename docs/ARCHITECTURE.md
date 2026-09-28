@@ -14,7 +14,7 @@ SignalProvider -> TradeSignal -> RiskEngine -> ExecutionWorkflow
 
 - `domain`: typed models, enums, exceptions, and protocols.
 - `application`: risk decisions, state transitions, and workflow orchestration.
-- `infrastructure`: configuration, file signals, Windows discovery, and audit logging.
+- `infrastructure`: configuration, file and HTTP signals, network policy, Windows discovery, and audit logging.
 - `adapters`: dry-run and currently unavailable desktop terminal implementations.
 - `cli`: diagnostics and safe one-signal commands.
 

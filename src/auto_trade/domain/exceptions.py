@@ -13,6 +13,10 @@ class NoSignalAvailable(AutoTradeError):
     """Raised when a provider has no signal ready to deliver."""
 
 
+class SignalSourceError(AutoTradeError):
+    """Raised when a signal source is unsafe, unauthenticated, or unreachable."""
+
+
 class SafetyViolation(AutoTradeError):
     """Raised when an execution safety gate rejects a request."""
 

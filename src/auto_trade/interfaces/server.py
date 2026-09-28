@@ -12,16 +12,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ..application.kill_switch import FileKillSwitch
+from ..infrastructure.net import is_loopback
 from .status import StatusReporter
 
-LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 MAX_BODY_BYTES = 64 * 1024
 
 ActionHandler = Callable[[], dict[str, Any]]
-
-
-def is_loopback(host: str) -> bool:
-    return host.strip().lower() in LOOPBACK_HOSTS
 
 
 class DashboardServer(ThreadingHTTPServer):
