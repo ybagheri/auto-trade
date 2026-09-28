@@ -19,7 +19,7 @@
 - [x] Define provider protocol.
 - [x] Implement local JSON file provider.
 - [x] Add localhost authenticated HTTP provider.
-- [ ] Add WebSocket, named-pipe, and MT5 bridge providers.
+- [x] Add WebSocket, named-pipe, and MT5 bridge providers.
 - [x] Add durable idempotency storage.
 
 ## Phase 3 — MT5 Discovery
@@ -94,3 +94,5 @@ compiled. See [packaging](docs/PACKAGING.md).
 - [ ] Security review and dependency review.
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.
 - [ ] Complete bilingual documentation synchronization.
+- [ ] Independent review of the hand-written WebSocket client, or replace it with a
+      reviewed dependency once the project accepts a runtime dependency.

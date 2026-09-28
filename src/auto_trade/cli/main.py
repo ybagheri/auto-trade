@@ -12,7 +12,7 @@ from ..adapters.terminal import DryRunTerminalAdapter
 from ..application.ledger import JsonExecutionLedger
 from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
-from ..domain.exceptions import AutoTradeError, NoSignalAvailable
+from ..domain.exceptions import AutoTradeError, NoSignalAvailable, SignalSourceError
 from ..domain.models import AuditEvent, PositionSnapshot, TradeSignal, utc_now
 from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
@@ -374,18 +374,23 @@ def _application_version() -> str:
 
 
 def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
-    """Pull one signal from the configured HTTP source into the signal directory.
+    """Pull one signal from the configured source into the signal directory.
 
     Fetching is a read: the response is written as a normal pending signal file
     and still has to pass the risk engine, the kill switch, and every other gate
-    before anything reaches the terminal.
+    before anything reaches the terminal. The source is whichever single one is
+    configured; two configured sources are refused.
     """
-    provider = config.http_signal_provider()
+    try:
+        provider = config.signal_source()
+    except SignalSourceError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     if provider is None:
         print(
-            "ERROR: no HTTP signal source configured. Set AUTO_TRADE_HTTP_SIGNAL_URL to a "
-            "loopback URL and AUTO_TRADE_HTTP_SIGNAL_TOKEN to its token. See "
-            "docs/SIGNAL_PROTOCOL.md.",
+            "ERROR: no signal source configured. Set exactly one of "
+            "AUTO_TRADE_HTTP_SIGNAL_URL, AUTO_TRADE_PIPE_SIGNAL_NAME, or "
+            "AUTO_TRADE_WS_SIGNAL_URL, with its matching token. See docs/SIGNAL_PROTOCOL.md.",
             file=sys.stderr,
         )
         return 2
@@ -412,7 +417,7 @@ def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
         AuditEvent(
             component="signal-provider",
             event_type="received",
-            message="signal received from the configured HTTP source",
+            message="signal received from the configured source",
             signal_id=signal.signal_id,
             symbol=signal.symbol,
             action=signal.action.value,
@@ -421,7 +426,12 @@ def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
     )
     print(
         json.dumps(
-            {"status": "RECEIVED", "written": str(target), "signal": signal.to_dict()},
+            {
+                "status": "RECEIVED",
+                "source": type(provider).__name__,
+                "written": str(target),
+                "signal": signal.to_dict(),
+            },
             indent=2,
         )
     )

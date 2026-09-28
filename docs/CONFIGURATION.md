@@ -17,6 +17,10 @@ Runtime configuration currently comes from environment variables with safe defau
 | `AUTO_TRADE_SIGNAL_EXPIRATION_SECONDS` | `10` | default signal lifetime |
 | `AUTO_TRADE_HTTP_SIGNAL_URL` | unset | loopback URL of the optional authenticated HTTP signal source |
 | `AUTO_TRADE_HTTP_SIGNAL_TOKEN` | unset | bearer token for that source; never logged, never committed |
+| `AUTO_TRADE_PIPE_SIGNAL_NAME` | unset | local named pipe for the optional authenticated pipe source |
+| `AUTO_TRADE_PIPE_SIGNAL_TOKEN` | unset | shared token for that pipe |
+| `AUTO_TRADE_WS_SIGNAL_URL` | unset | loopback `ws://` URL of the optional authenticated WebSocket source |
+| `AUTO_TRADE_WS_SIGNAL_TOKEN` | unset | shared token for that WebSocket source |
 
 `config/default.yaml` documents the intended human-readable shape. The current implementation does not parse YAML; do not assume a YAML edit changes runtime behavior.
 
@@ -24,4 +28,8 @@ Runtime configuration currently comes from environment variables with safe defau
 
 Keep dry-run and demo-only enabled. An environment variable is not a substitute for account and terminal verification. The real adapter must fail closed when account type, terminal identity, or execution result is uncertain.
 
-A configured HTTP signal source does not weaken any of this. It is a pull-only client: it must be a loopback URL, it must present its token, it refuses a redirect off loopback, and a fetched signal still passes the same gates as a signal file. See [signal protocol](SIGNAL_PROTOCOL.md).
+A configured signal source does not weaken any of this. Sources are pull-only
+clients or readers: they must be loopback or local, they must authenticate, and
+a fetched signal still passes the same gates as a signal file. Configure exactly
+one of the three network sources; two at once is refused rather than resolved.
+See [signal protocol](SIGNAL_PROTOCOL.md).

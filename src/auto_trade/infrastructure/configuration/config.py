@@ -6,8 +6,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from ...domain.enums import ConfirmationPolicy
+from ...domain.exceptions import SignalSourceError
 from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
-from ..signals import HttpSignalProvider
+from ...domain.protocols import SignalProvider
+from ..signals import HttpSignalProvider, NamedPipeSignalProvider, WebSocketSignalProvider
 from .env_file import load_env_file
 
 
@@ -27,6 +29,10 @@ class AppConfig:
     strategy_spec: str = ""
     http_signal_url: str = ""
     http_signal_token: str = ""
+    pipe_signal_name: str = ""
+    pipe_signal_token: str = ""
+    ws_signal_url: str = ""
+    ws_signal_token: str = ""
 
     @classmethod
     def from_env(cls) -> AppConfig:
@@ -75,6 +81,13 @@ class AppConfig:
             # by diagnostics, or written to an audit record.
             http_signal_url=os.getenv("AUTO_TRADE_HTTP_SIGNAL_URL", "").strip(),
             http_signal_token=os.getenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "").strip(),
+            # Named-pipe and WebSocket sources are mutually exclusive with the
+            # others only in practice: exactly one source is used per command, and
+            # all three are pull-only, authenticated, and loopback-scoped.
+            pipe_signal_name=os.getenv("AUTO_TRADE_PIPE_SIGNAL_NAME", "").strip(),
+            pipe_signal_token=os.getenv("AUTO_TRADE_PIPE_SIGNAL_TOKEN", "").strip(),
+            ws_signal_url=os.getenv("AUTO_TRADE_WS_SIGNAL_URL", "").strip(),
+            ws_signal_token=os.getenv("AUTO_TRADE_WS_SIGNAL_TOKEN", "").strip(),
             risk=RiskLimits(
                 allowed_symbols=allowed,
                 max_volume=Decimal(os.getenv("AUTO_TRADE_MAX_VOLUME", "1.0")),
@@ -104,3 +117,36 @@ class AppConfig:
         if not self.http_signal_url:
             return None
         return HttpSignalProvider(self.http_signal_url, self.http_signal_token)
+
+    def pipe_signal_provider(self) -> NamedPipeSignalProvider | None:
+        if not self.pipe_signal_name:
+            return None
+        return NamedPipeSignalProvider(self.pipe_signal_name, self.pipe_signal_token)
+
+    def ws_signal_provider(self) -> WebSocketSignalProvider | None:
+        if not self.ws_signal_url:
+            return None
+        return WebSocketSignalProvider(self.ws_signal_url, self.ws_signal_token)
+
+    def signal_source(self) -> SignalProvider | None:
+        """Return the one configured pull source, or ``None`` when none is set.
+
+        More than one configured source is refused rather than resolved by
+        precedence. An operator who configured two of them has not decided which
+        one is authoritative, and guessing would mean a signal can arrive from a
+        source nobody is watching.
+        """
+        configured = {
+            "AUTO_TRADE_HTTP_SIGNAL_URL": self.http_signal_provider(),
+            "AUTO_TRADE_PIPE_SIGNAL_NAME": self.pipe_signal_provider(),
+            "AUTO_TRADE_WS_SIGNAL_URL": self.ws_signal_provider(),
+        }
+        selected = sorted(name for name, provider in configured.items() if provider is not None)
+        if len(selected) > 1:
+            raise SignalSourceError(
+                f"more than one signal source is configured ({', '.join(selected)}); "
+                "configure exactly one"
+            )
+        if not selected:
+            return None
+        return configured[selected[0]]

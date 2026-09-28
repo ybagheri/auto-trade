@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import hmac
 from urllib.parse import SplitResult, urlsplit
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 MAX_RESPONSE_BYTES = 64 * 1024
+
+
+def constant_time_equals(supplied: str, expected: str) -> bool:
+    """Compare two secrets without an early exit on the first differing byte."""
+    return hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
 
 
 def is_loopback(host: str) -> bool:

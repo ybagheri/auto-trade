@@ -13,7 +13,7 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 ## Features
 
 - Typed Python domain models for signals, requests, results, terminal profiles, risk limits, and audit events.
-- Provider protocol with a local JSON file signal provider and an authenticated localhost HTTP provider.
+- Provider protocol with local file, MT5 bridge, and authenticated localhost HTTP, named-pipe, and WebSocket sources.
 - Independent risk engine with symbol whitelist, volume, expiration, rate, connection, and position limits.
 - Kill switch, demo-only policy, dry-run workflow, duplicate signal protection, and explicit unknown execution state.
 - Execution state machine with logged transitions.
@@ -55,11 +55,13 @@ A signal, decision, UI click, broker acceptance, and verified position are diffe
 
 ## Supported Signal Sources
 
-Implemented: local JSON files, and an authenticated localhost HTTP pull source
-(`fetch-signal`, loopback only, token required, redirects off loopback refused).
-See [signal protocol](docs/SIGNAL_PROTOCOL.md).
+Implemented: local JSON files, MT5 bridge files written by an MQL5 program, and
+three authenticated local sources: an HTTP pull, a named pipe, and a loopback
+WebSocket. Exactly one source is used per run; two at once are refused. See
+[signal protocol](docs/SIGNAL_PROTOCOL.md).
 
-Planned: WebSocket, named pipes, MT5 bridge, and other providers. No network execution API is exposed, and no provider can place an order.
+No provider opens a network listener, no provider can place an order, and
+`wss` is refused rather than approximated.
 
 ## MT5 Integration
 
@@ -116,9 +118,10 @@ A signal expires at `timestamp + expiration_seconds` unless it carries an explic
 `expiration`, so generate one with `make-signal` rather than editing the example by
 hand. `make-signal` also writes the file that the other commands read.
 
-`fetch-signal` needs `AUTO_TRADE_HTTP_SIGNAL_URL` (a loopback URL) and
-`AUTO_TRADE_HTTP_SIGNAL_TOKEN`. It performs one authenticated `GET` and writes the
-returned signal into the signal directory, where the normal gates still apply.
+`fetch-signal` needs exactly one source: `AUTO_TRADE_HTTP_SIGNAL_URL`,
+`AUTO_TRADE_PIPE_SIGNAL_NAME`, or `AUTO_TRADE_WS_SIGNAL_URL`, each with its
+matching token. It performs one authenticated read and writes the returned signal
+into the signal directory, where the normal gates still apply.
 
 ## Strategy Integration
 
@@ -215,7 +218,7 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 214 unit and integration tests executed.
+- **PASS — mocked:** 271 unit and integration tests executed.
 - **PASS — environment:** MT5 executable, data directory, and demo process were found.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs prepared and closed the semantic order dialog without final execution.
 - **BLOCKED — position verification:** the MT5 Trade grid exposes no row values through UIA, Win32 `LVM_GETITEMTEXT`, or MSAA; the read-only indicator snapshot is required.

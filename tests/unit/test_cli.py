@@ -210,6 +210,34 @@ def test_fetch_signal_reports_a_missing_configuration(
     assert code == 2
 
 
+def test_fetch_signal_refuses_two_configured_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_URL", "http://127.0.0.1:8787/signals/next")
+    monkeypatch.setenv("AUTO_TRADE_HTTP_SIGNAL_TOKEN", "token-value")
+    monkeypatch.setenv("AUTO_TRADE_WS_SIGNAL_URL", "ws://127.0.0.1:8787/signals")
+    monkeypatch.setenv("AUTO_TRADE_WS_SIGNAL_TOKEN", "token-value")
+
+    code = main(["fetch-signal"])
+
+    assert code == 2
+    assert not (tmp_path / "signals").exists()
+
+
+def test_fetch_signal_refuses_an_unsafe_websocket_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AUTO_TRADE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("AUTO_TRADE_WS_SIGNAL_URL", "wss://127.0.0.1:8787/signals")
+    monkeypatch.setenv("AUTO_TRADE_WS_SIGNAL_TOKEN", "token-value")
+
+    code = main(["fetch-signal"])
+
+    assert code == 2
+    assert not (tmp_path / "signals").exists()
+
+
 def test_fetch_signal_refuses_a_non_loopback_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
