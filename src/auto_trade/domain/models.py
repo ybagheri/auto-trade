@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -7,6 +8,27 @@ from typing import Any
 
 from .enums import AccountType, ConfirmationPolicy, ExecutionStatus, OrderAction
 from .exceptions import InvalidSignalError
+
+# A signal id is an idempotency key *and* the name of the file a fetched signal
+# is written to, so it has to be usable as a single filename component. Without
+# this rule an id of `../../x` would be a valid signal whose id escaped the
+# signal directory and wrote wherever the process could write, which turns any
+# signal source into an arbitrary file write. The set is deliberately narrow:
+# these ids are generated, not chosen by a human, so nothing legitimate is lost.
+SIGNAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+SIGNAL_ID_RULE = (
+    "id must start with a letter or digit and contain only letters, digits, "
+    "dot, dash, and underscore, up to 128 characters; it is used as a file name "
+    "and must not be able to name a path"
+)
+
+
+def validate_signal_id(signal_id: str) -> str:
+    """Refuse an id that could name a path rather than a file."""
+    text = signal_id.strip()
+    if not text or not SIGNAL_ID_PATTERN.match(text):
+        raise InvalidSignalError(f"{SIGNAL_ID_RULE} (got {signal_id!r})")
+    return text
 
 
 def utc_now() -> datetime:
@@ -57,6 +79,7 @@ class TradeSignal:
     ) -> None:
         if not signal_id.strip():
             raise InvalidSignalError("id is required")
+        validate_signal_id(signal_id)
         if not source.strip():
             raise InvalidSignalError("source is required")
         if not symbol.strip():
@@ -65,7 +88,7 @@ class TradeSignal:
             raise InvalidSignalError("volume must be positive")
         if confidence is not None and not 0 <= confidence <= 1:
             raise InvalidSignalError("confidence must be between 0 and 1")
-        self.signal_id = signal_id
+        self.signal_id = signal_id.strip()
         self.timestamp = timestamp.astimezone(UTC)
         self.source = source
         self.symbol = symbol.upper()

@@ -21,6 +21,18 @@ Auto Trade is not financial, broker, or execution advice. It can create orders w
 - Orders per minute are rate-limited.
 - Every state transition and result is audited.
 - Unknown execution is never treated as success.
+- No network endpoint can place, modify, or close an order. Neither the
+  dashboard nor the [local API](API.md) has one, and the local API refuses a
+  route that would, with a reason naming the CLI.
+- The local API requires a token on every route, reads included, and refuses the
+  token in a query string. It binds loopback only.
+- A signal `id` is validated before it is used as a file name, and a fetched
+  signal is refused if its path would resolve outside the signal directory. See
+  [security review](SECURITY_REVIEW.md).
+- Live execution is refused when the file that enabled it is not the reviewed
+  project checkout's. Setting the variable in the shell still works.
+- `diagnostics` reports which env file supplied the settings and whether a person
+  chose it.
 
 ## Future controls
 

@@ -136,6 +136,15 @@ query, or fragment.
 
 A signal is normalized before anything else looks at it. The risk engine then checks whitelist, volume, expiration, duplicate IDs, rate, connection, and position limits. A signal is never retried automatically after an unknown execution state.
 
+**The `id` is validated too, because this project uses it as a file name.** It must
+start with a letter or digit and contain only letters, digits, dot, dash, and
+underscore. A source can therefore never choose a path, only a name; an id of
+`../../x` is rejected as an invalid signal rather than written outside the signal
+directory. The two places that write a fetched or proposed signal resolve the path
+and refuse it unless it is a file directly inside the signal directory, so the
+rule holds even if the id rule is ever widened. This was a real finding in the
+[security review](SECURITY_REVIEW.md), not a hypothetical.
+
 ## Duplicate prevention and expiration
 
 A signal ID is recorded in the durable execution ledger when order preparation reaches `ORDER_READY`, and it is replayed on startup, so a duplicate is rejected across process restarts and not only within one workflow instance. A signal expires at its explicit `expiration`, or at `timestamp + expiration_seconds` when no explicit expiration exists.
