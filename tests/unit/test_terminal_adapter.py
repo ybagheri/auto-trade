@@ -13,7 +13,7 @@ class FakeWindow:
 
 
 class FakeManager(MT5WindowManager):
-    def find(self, profile: TerminalProfile) -> FakeWindow:
+    def find(self, profile: TerminalProfile, process_id: int | None = None) -> FakeWindow:
         self._window = FakeWindow()
         return self._window
 

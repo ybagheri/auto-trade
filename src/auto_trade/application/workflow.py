@@ -136,12 +136,21 @@ class ExecutionWorkflow:
             verified = self.adapter.verify_execution(request)
             if verified.status is not ExecutionStatus.ACCEPTED:
                 machine.transition(ExecutionState.VERIFICATION_FAILED)
+                # The evidence is carried here too, not only on the accepted
+                # path. This is the branch an operator has to investigate, and
+                # the baseline and observed readings are what they need to do it:
+                # without them "no new matching position" says only that a
+                # comparison failed, not what was compared. The 2026-09-29 order
+                # that the broker rejected reported no evidence at all for
+                # exactly this reason, and the readings existed the whole time.
                 return self._result(
                     execution_id,
                     signal,
                     ExecutionStatus.UNKNOWN,
                     ExecutionState.VERIFICATION_FAILED,
                     verified.message,
+                    verified.order_reference,
+                    evidence=verified.evidence,
                 )
             machine.transition(ExecutionState.SUCCESS)
             return self._result(

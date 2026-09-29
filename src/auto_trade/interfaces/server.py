@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import json
 import secrets
 import threading
@@ -12,7 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ..application.kill_switch import FileKillSwitch
-from ..infrastructure.net import is_loopback
+from ..infrastructure.net import constant_time_equals, is_loopback
 from .status import StatusReporter
 
 MAX_BODY_BYTES = 64 * 1024
@@ -109,7 +108,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             supplied = (query.get("token") or [""])[0]
         if not supplied:
             return False
-        return hmac.compare_digest(supplied, self.dashboard.token)
+        return constant_time_equals(supplied, self.dashboard.token)
 
     def _reject_unauthorised(self) -> None:
         self._send_json(
@@ -121,21 +120,26 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             HTTPStatus.FORBIDDEN,
         )
 
-    def _read_body(self) -> dict[str, Any]:
+    def _drain_body(self) -> None:
+        """Read and discard the request body.
+
+        The body must be consumed before any reply. With HTTP/1.1 keep-alive an
+        unread body stays in the socket buffer, so the next request on the same
+        connection is parsed starting mid-body and every response after it is
+        wrong. This holds for a refusal and for an unknown route, not only for
+        a request that is acted on.
+
+        Nothing here parses the body: no endpoint on this surface takes one, so
+        a malformed body is discarded rather than interpreted.
+        """
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            return {}
+            return
         if length <= 0:
-            return {}
-        if length > MAX_BODY_BYTES:
-            return {}
-        raw = self.rfile.read(length)
-        try:
-            parsed = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
+            return
+        # An oversized body is dropped up to the cap rather than left buffered.
+        self.rfile.read(min(length, MAX_BODY_BYTES))
 
     # -- routing ----------------------------------------------------------
 
@@ -187,6 +191,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         route = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
 
+        # The body is consumed before routing, so an unknown route answers 404
+        # on a connection that is still in a known state.
+        self._drain_body()
+
         actions: dict[str, ActionHandler] = {
             "/api/emergency-stop": self.dashboard.emergency_stop,
             "/api/resume": self.dashboard.resume,
@@ -195,10 +203,6 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if action is None:
             self._send_json({"error": "not found", "path": route}, HTTPStatus.NOT_FOUND)
             return
-        # The body must be consumed before responding, otherwise an unread body
-        # stays in the socket buffer and desynchronises the next keep-alive
-        # request on the same connection.
-        self._read_body()
         if not self._authorised(query):
             self._reject_unauthorised()
             return

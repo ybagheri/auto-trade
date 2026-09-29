@@ -145,20 +145,70 @@ def _element_gone() -> tuple[type[BaseException], ...]:
 
 
 
+def _owner_pid(window: Any) -> int:
+    """The process that owns *window*, or ``-1`` when the tree does not say.
+
+    pywinauto raises rather than returning ``None`` on some builds when the
+    element is gone mid-read, so a terminal closing during discovery must
+    produce a miss here and not an exception that looks like a different fault.
+    """
+    try:
+        return int(window.element_info.process_id)
+    except (AttributeError, TypeError, ValueError, AutomationError):
+        return -1
+
+
 class MT5WindowManager:
     def __init__(self) -> None:
         self._window: Any | None = None
         self._order_dialog: Any | None = None
 
-    def find(self, profile: TerminalProfile) -> Any:
+    def find(self, profile: TerminalProfile, process_id: int | None = None) -> Any:
+        """Select the one window belonging to the connected terminal.
+
+        When *process_id* is known, that is the only thing that identifies the
+        window. Several MT5 instances on one machine routinely carry the *same*
+        window title, because the title shows the account name and the broker
+        names its demo accounts alike. Matching on the title and then taking the
+        first hit is therefore how this project could drive somebody else's
+        account: the demo check that follows would pass, because every one of
+        them is a demo. An ambiguous set is refused instead.
+        """
         try:
             pywinauto = importlib.import_module("pywinauto")
         except ImportError as exc:
             raise AutomationError("pywinauto is required for real terminal inspection") from exc
         windows = pywinauto.Desktop(backend="uia").windows()
-        matches = [window for window in windows if self._matches(window.window_text(), profile)]
-        if not matches:
-            raise AutomationError("configured MT5 window was not found")
+        if process_id is not None:
+            matches = [window for window in windows if _owner_pid(window) == process_id]
+            if not matches:
+                raise AutomationError(
+                    f"no window belongs to the connected terminal (pid {process_id}); "
+                    "the terminal may have been restarted"
+                )
+            if len(matches) > 1:
+                raise AutomationError(
+                    f"{len(matches)} windows belong to the connected terminal "
+                    f"(pid {process_id}); refusing to guess which one to drive"
+                )
+        else:
+            matches = [
+                window
+                for window in windows
+                if self._matches(str(window.window_text() or ""), profile)
+            ]
+            if not matches:
+                raise AutomationError("configured MT5 window was not found")
+            if len(matches) > 1:
+                titles = sorted(
+                    {f"{_owner_pid(window)}: {window.window_text()}" for window in matches}
+                )
+                raise AutomationError(
+                    f"{len(matches)} MT5 windows match the instance name and their titles "
+                    f"are not unique ({'; '.join(titles)}); refusing to choose one. "
+                    "This happens when several terminals are open at once, and the fix "
+                    "is to drive it through discovery so the window is pinned by process id."
+                )
         self._window = matches[0]
         return self._window
 
@@ -472,12 +522,16 @@ class MT5DesktopAdapter:
         self.close_timeout_seconds = 10.0
         self.selected_symbol: str | None = None
         self.prepared: OrderRequest | None = None
+        self.resolved_terminal: Any | None = None
         self._baseline: tuple[PositionSnapshot, ...] | None = None
         self._baseline_error: str | None = None
 
     def connect(self) -> AccountSnapshot:
-        WindowsTerminalDiscovery().discover(self.profile)
-        self.window_manager.find(self.profile)
+        # Discovery resolves the process; the window is then selected by that
+        # process id rather than by a title several instances may share.
+        resolved = WindowsTerminalDiscovery().resolve(self.profile)
+        self.resolved_terminal = resolved
+        self.window_manager.find(self.profile, resolved.process_id)
         title = self.window_manager.title
         if "demo" not in title.lower():
             raise AutomationError("configured MT5 window is not identified as a demo account")

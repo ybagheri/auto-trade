@@ -40,7 +40,7 @@ class ScriptedProvider:
 
 
 class FakeManager(MT5WindowManager):
-    def find(self, profile: TerminalProfile) -> Any:
+    def find(self, profile: TerminalProfile, process_id: int | None = None) -> Any:
         raise AssertionError("connect is not exercised in these tests")
 
 

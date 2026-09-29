@@ -1,4 +1,4 @@
-"""The three defects a real demo order exposed on 2026-09-28.
+﻿"""The three defects a real demo order exposed on 2026-09-28.
 
 A guarded BUY was clicked on Alpari MT5 6184, the broker filled it, and the
 application still reported UNKNOWN. Each test below reproduces one cause, so the
@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import time
 from decimal import Decimal
+from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import pytest
@@ -17,6 +19,7 @@ from auto_trade.application.workflow import ExecutionWorkflow
 from auto_trade.domain.enums import AccountType, ExecutionState, ExecutionStatus
 from auto_trade.domain.exceptions import (
     AutomationError,
+    AutomationRejectedError,
     PositionSnapshotUnavailable,
 )
 from auto_trade.domain.models import (
@@ -172,6 +175,45 @@ def adapter_for(provider: FlakyProvider, timeout: float = 2.0) -> MT5DesktopAdap
     return adapter
 
 
+class ConnectedAdapter(MT5DesktopAdapter):
+    """An adapter that answers `connect` without a real terminal.
+
+    `connect` performs process discovery, which needs a running MT5 and is not
+    what these tests are about; the workflow calls it to obtain the account for
+    the demo-only gate.
+    """
+
+    def connect(self) -> AccountSnapshot:
+        self.connected = True
+        return AccountSnapshot(AccountType.DEMO, connected=True)
+
+
+class PreparingManager(SelfClosingManager):
+    """A dialog that can be written to, so the whole order path can be walked.
+
+    The workflow prepares a request before it clicks anything, and the
+    preparation is a real part of what these tests cover: the baseline that the
+    evidence is compared against is captured during it.
+    """
+
+    def set_field(self, automation_id: str, value: str) -> None:
+        self.fields[automation_id] = value
+
+    def select_market_execution(self) -> None:
+        return None
+
+
+def connectable_for(provider: FlakyProvider, timeout: float = 2.0) -> ConnectedAdapter:
+    adapter = ConnectedAdapter(
+        TerminalProfile("alpari-demo", "terminal64.exe", "data", "Alpari-MT5-Demo"),
+        PreparingManager(fields()),
+        position_provider=provider,
+        gate=OPEN_GATE,
+    )
+    adapter.verification_timeout_seconds = timeout
+    return adapter
+
+
 # -- 1: the dialog MT5 destroys is a closed dialog, not a crash ----------
 
 
@@ -253,6 +295,86 @@ def test_verification_reports_the_last_observation_error() -> None:
     result = adapter.verify_execution(request())
 
     assert "not readable JSON" in result.message
+
+
+# -- 4: a failed verification keeps the readings it was based on ---------
+#
+# Found 2026-09-29, on build 6230, when the broker rejected a real demo order
+# for lack of a network connection. The order was correctly reported UNKNOWN,
+# but with no evidence at all, even though the adapter had read the account both
+# before and after the click and knew exactly what it compared. An UNKNOWN is the
+# one record an operator must investigate, so discarding the comparison is the
+# wrong place to save the detail.
+
+
+def test_the_workflow_keeps_evidence_when_verification_fails() -> None:
+    """The broker rejected the order, so the account stayed empty either side of the click.
+
+    This is the 2026-09-29 sequence: baseline empty, click, nothing appears, and
+    the result is UNKNOWN. The readings that produced that conclusion were taken
+    and are what an operator needs to see.
+    """
+    provider = FlakyProvider()
+    provider.reads.append(())  # the account was empty before the click, and after it
+    workflow, _ = workflow_for(connectable_for(provider, timeout=0.3))
+
+    result = workflow.execute(request().signal)
+
+    assert result.status is ExecutionStatus.UNKNOWN
+    assert result.state == ExecutionState.VERIFICATION_FAILED.value
+    assert result.evidence is not None
+    assert result.evidence.baseline == "ui positions=none"
+    assert result.evidence.observed == "ui positions=none"
+
+
+def test_the_evidence_reaches_the_ledger_and_the_audit_trail(tmp_path: Path) -> None:
+    """An operator investigating this reads the ledger and the log, not a return value."""
+    from auto_trade.application.ledger import JsonExecutionLedger
+
+    provider = FlakyProvider()
+    provider.reads.append(())
+    workflow, events = workflow_for(connectable_for(provider, timeout=0.3))
+
+    # Under tmp_path rather than the working directory: a ledger that persists
+    # would otherwise leave a file in the project root on every test run, which
+    # is litter this suite has to not produce.
+    class RecordingLedger(JsonExecutionLedger):
+        def __init__(self) -> None:
+            self.path = tmp_path / "idempotency.json"
+            self._lock = Lock()
+            self._entries: dict[str, dict[str, Any]] = {}
+
+    ledger = RecordingLedger()
+    workflow.ledger = ledger
+
+    workflow.execute(request().signal)
+
+    recorded = ledger.records()[0]
+    assert recorded["status"] == "UNKNOWN"
+    assert recorded["evidence"] is not None
+    assert recorded["evidence"]["baseline"] == "ui positions=none"
+    results = [event for event in events if event.event_type == "result"]
+    assert results and results[-1].evidence is not None
+
+
+def test_a_refusal_still_carries_no_evidence() -> None:
+    """A refusal is not a failed observation, so it must not be dressed as one."""
+
+    class RefusingAdapter(ConnectedAdapter):
+        def prepare_order(self, request: OrderRequest) -> None:
+            raise AutomationRejectedError("dialog did not match the approved request")
+
+    workflow, _ = workflow_for(RefusingAdapter(
+        TerminalProfile("alpari-demo", "terminal64.exe", "data", "Alpari-MT5-Demo"),
+        PreparingManager(fields()),
+        position_provider=FlakyProvider(),
+        gate=OPEN_GATE,
+    ))
+
+    result = workflow.execute(request().signal)
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert result.evidence is None
 
 
 # -- 3: an unknown outcome names its cause ------------------------------
