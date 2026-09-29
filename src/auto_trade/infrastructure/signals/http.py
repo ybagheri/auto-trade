@@ -4,10 +4,9 @@ import http.client
 import json
 import urllib.error
 import urllib.request
-from http.client import HTTPMessage
-from typing import IO, Any
+from typing import Any
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, OpenerDirector, Request, build_opener
+from urllib.request import OpenerDirector, Request, build_opener
 
 from ...domain.exceptions import (
     InvalidSignalError,
@@ -15,37 +14,17 @@ from ...domain.exceptions import (
     SignalSourceError,
 )
 from ...domain.models import TradeSignal
-from ..net import MAX_RESPONSE_BYTES, is_loopback, split_loopback_url
+from ..net import (
+    MAX_RESPONSE_BYTES,
+    LoopbackOnlyRedirectHandler,
+    NonLoopbackRedirectError,
+    is_loopback,
+    split_loopback_url,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
 IDLE_STATUSES = frozenset({204, 404, 503})
 AUTH_STATUSES = frozenset({401, 403})
-
-
-class _LoopbackRedirectHandler(HTTPRedirectHandler):
-    """Refuses a redirect that would move a request off loopback.
-
-    A redirect is followed by the standard library with the original headers
-    intact, which would resend the bearer token to a host the operator never
-    configured. The provider therefore fails closed instead of following it.
-    """
-
-    def redirect_request(
-        self,
-        req: Request,
-        fp: IO[bytes],
-        code: int,
-        msg: str,
-        headers: HTTPMessage,
-        newurl: str,
-    ) -> Request | None:
-        host = urlsplit(newurl).hostname or ""
-        if not is_loopback(host):
-            raise SignalSourceError(
-                f"signal endpoint redirected to non-loopback host {host!r}; refusing to "
-                "follow it and to resend the configured token"
-            )
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 class HttpSignalProvider:
@@ -85,7 +64,7 @@ class HttpSignalProvider:
             raise SignalSourceError("signal endpoint timeout must be greater than zero")
         if self.max_bytes <= 0:
             raise SignalSourceError("signal endpoint response limit must be greater than zero")
-        self._opener = build_opener(_LoopbackRedirectHandler())
+        self._opener = build_opener(LoopbackOnlyRedirectHandler())
         self._started = True
 
     def stop(self) -> None:
@@ -116,6 +95,10 @@ class HttpSignalProvider:
                     f"signal endpoint rejected the configured token (HTTP {exc.code})"
                 ) from exc
             raise SignalSourceError(f"signal endpoint returned HTTP {exc.code}") from exc
+        except NonLoopbackRedirectError as exc:
+            # Checked before the generic URLError so a refused redirect keeps
+            # reporting itself as the policy refusal it is, not as a dead host.
+            raise SignalSourceError(f"signal endpoint {exc.reason}") from exc
         except (urllib.error.URLError, http.client.HTTPException, OSError, TimeoutError) as exc:
             raise SignalSourceError(f"signal endpoint is unreachable: {_reason(exc)}") from exc
 

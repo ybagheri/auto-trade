@@ -22,18 +22,24 @@ class FilePositionSnapshot:
         account: int | None,
         server: str | None,
         positions: tuple[PositionSnapshot, ...],
+        terminal_build: int | None = None,
     ) -> None:
         self.sequence = sequence
         self.written_at = written_at
         self.account = account
         self.server = server
         self.positions = positions
+        # The build that wrote the snapshot. Carried so a control measurement can
+        # be filed under the build it was taken on: an identifier measured on one
+        # build is not evidence about another.
+        self.terminal_build = terminal_build
 
     @property
     def reference(self) -> str:
+        build = f" build={self.terminal_build}" if self.terminal_build else ""
         return (
             f"file sequence={self.sequence} written_at={self.written_at.isoformat()} "
-            f"account={self.account} server={self.server} "
+            f"account={self.account} server={self.server}{build} "
             f"positions={len(self.positions)}"
         )
 
@@ -67,12 +73,14 @@ class MT5FilePositionSnapshotProvider:
             raise PositionSnapshotUnavailable("position snapshot has no positions list")
         account = document.get("account")
         server = document.get("server")
+        build = document.get("terminal_build")
         return FilePositionSnapshot(
             sequence=_sequence(document),
             written_at=written_at,
             account=account if isinstance(account, int) else None,
             server=server if isinstance(server, str) else None,
             positions=tuple(self._parse_position(entry) for entry in raw_positions),
+            terminal_build=build if isinstance(build, int) else None,
         )
 
     def positions(self) -> tuple[PositionSnapshot, ...]:

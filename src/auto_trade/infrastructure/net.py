@@ -1,11 +1,47 @@
 from __future__ import annotations
 
 import hmac
+from http.client import HTTPMessage
+from typing import IO
+from urllib.error import URLError
 from urllib.parse import SplitResult, urlsplit
+from urllib.request import HTTPRedirectHandler, Request
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 ALLOWED_URL_SCHEMES = frozenset({"http", "https"})
 MAX_RESPONSE_BYTES = 64 * 1024
+
+
+class NonLoopbackRedirectError(URLError):
+    """Raised when a redirect would move an authenticated request off loopback."""
+
+
+class LoopbackOnlyRedirectHandler(HTTPRedirectHandler):
+    """Refuses a redirect that would move a request off loopback.
+
+    The standard library follows a redirect with the original headers intact, so
+    an unguarded client resends its bearer token to a host the operator never
+    configured. Both the signal provider and the local API client fail closed
+    instead, which is why this policy lives in one place: the two must not be
+    able to disagree about it.
+    """
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> Request | None:
+        host = urlsplit(newurl).hostname or ""
+        if not is_loopback(host):
+            raise NonLoopbackRedirectError(
+                f"refusing to follow a redirect to non-loopback host {host!r}; it would "
+                "resend the configured token to a host that was never configured"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def constant_time_equals(supplied: str, expected: str) -> bool:

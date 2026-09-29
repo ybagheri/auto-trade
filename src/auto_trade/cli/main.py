@@ -159,11 +159,60 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="control token; generated when omitted",
     )
+    api = subparsers.add_parser(
+        "api",
+        help="serve the token-authenticated, read-only local API",
+    )
+    api.add_argument("--host", default="127.0.0.1")
+    api.add_argument("--port", type=int, default=8766)
+    api.add_argument(
+        "--token",
+        default=None,
+        help="API token; defaults to AUTO_TRADE_API_TOKEN and is required",
+    )
+    api.add_argument(
+        "--print-token",
+        action="store_true",
+        help="print a freshly generated token and exit, for a caller to configure",
+    )
+    preflight = subparsers.add_parser(
+        "terminal-check",
+        help="probe the configured terminal's controls after an MT5 update",
+    )
+    preflight.add_argument(
+        "--compare",
+        action="store_true",
+        help="compare against the previous report instead of probing again",
+    )
+    preflight.add_argument(
+        "--no-record",
+        action="store_true",
+        help="print the report without appending it to the history",
+    )
     return parser
 
 
 def _signal(path: Path) -> TradeSignal:
     return TradeSignal.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _signal_target(directory: Path, signal: TradeSignal) -> Path:
+    """Where a fetched or proposed signal is written, contained to *directory*.
+
+    `TradeSignal` already refuses an id that could name a path. This is the
+    second lock on the same door: if that rule is ever widened, a write must
+    still not be able to leave the directory it was meant to stay in. The
+    containment is checked against the *resolved* path, so a symlinked directory
+    does not defeat it either.
+    """
+    root = Path(directory).resolve()
+    target = (root / f"{signal.signal_id}.json").resolve()
+    if target.parent != root:
+        raise AutoTradeError(
+            f"refusing to write signal {signal.signal_id!r} outside {root}: the "
+            "resolved path is not a file directly inside the signal directory"
+        )
+    return root / f"{signal.signal_id}.json"
 
 
 def _metrics(config: AppConfig, tail: int) -> dict[str, object]:
@@ -209,6 +258,13 @@ def _diagnostics(config: AppConfig) -> dict[str, object]:
         # diagnostics can never echo the configured token.
         "http_signal_endpoint": safe_url_summary(config.http_signal_url),
         "http_signal_token_configured": bool(config.http_signal_token),
+        # Reported the same way: whether a token exists, never what it is.
+        "local_api_endpoint": safe_url_summary(config.api_url),
+        "local_api_token_configured": bool(config.api_token),
+        # Which file supplied the settings above, and whether a person chose it.
+        # An untrusted source is one this project did not write.
+        "env_file": config.env_file or "(none)",
+        "env_file_trusted": config.env_file_trusted,
     }
 
 
@@ -264,7 +320,7 @@ def _evaluate(config: AppConfig, args: argparse.Namespace) -> int:
         )
         return 0
 
-    target = args.output or (config.signal_directory / f"{signal.signal_id}.json")
+    target = args.output or _signal_target(config.signal_directory, signal)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(signal.to_dict(), indent=2), encoding="utf-8")
     AuditLogger(config.log_directory).record(
@@ -458,7 +514,7 @@ def _fetch_signal(config: AppConfig, args: argparse.Namespace) -> int:
     finally:
         provider.stop()
 
-    target = args.output or (config.signal_directory / f"{signal.signal_id}.json")
+    target = args.output or _signal_target(config.signal_directory, signal)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(signal.to_dict(), indent=2), encoding="utf-8")
     AuditLogger(config.log_directory).record(
@@ -504,6 +560,12 @@ def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
     ledger = JsonExecutionLedger(config.log_directory / "idempotency.json")
     known = {str(record.get("order_reference") or "") for record in ledger.records()}
     if args.ticket not in known:
+        _audit_close_refusal(
+            config,
+            args.ticket,
+            "the ticket is not in the execution ledger, so it is not a position this "
+            "application opened",
+        )
         print(
             f"ERROR: ticket {args.ticket} is not in the execution ledger, so it is not a "
             "position this application opened; close it by hand",
@@ -511,6 +573,7 @@ def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
         )
         return 2
     if not config.policy.execution_enabled and not _flag_enabled("AUTO_TRADE_ENABLE_CLOSE"):
+        _audit_close_refusal(config, args.ticket, "closing is disabled")
         print(
             "ERROR: closing is disabled. Set AUTO_TRADE_ENABLE_CLOSE=true in .env, or in "
             "this shell only:\n"
@@ -518,6 +581,11 @@ def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
             "  cmd         set AUTO_TRADE_ENABLE_CLOSE=true",
             file=sys.stderr,
         )
+        return 2
+    untrusted = config.live_execution_refusal()
+    if untrusted:
+        _audit_close_refusal(config, args.ticket, untrusted)
+        print(f"ERROR: {untrusted}", file=sys.stderr)
         return 2
     terminal = MT5DesktopAdapter(
         config.terminal_profile(),
@@ -558,6 +626,25 @@ def _close_position(config: AppConfig, args: argparse.Namespace) -> int:
     return 0 if result.status.value == "CLOSED" else 1
 
 
+def _audit_close_refusal(config: AppConfig, ticket: str, reason: str) -> None:
+    """Record a close that was refused, so the trail shows the attempt.
+
+    A refusal to close a position is a safety-relevant event: somebody wanted an
+    account changed and this project declined. Printing it to stderr leaves it in
+    a scrollback, which is not a record. The token of the configuration is never
+    involved here; the ticket and the reason are all that is written.
+    """
+    AuditLogger(config.log_directory).record(
+        AuditEvent(
+            component="position-close",
+            event_type="refused",
+            message=f"close refused: {reason}",
+            action=f"CLOSE {ticket}",
+            state="POSITION_CLOSE_REFUSED",
+        )
+    )
+
+
 def _flag_enabled(name: str) -> bool:
     import os
 
@@ -592,9 +679,101 @@ def _dashboard(config: AppConfig, args: argparse.Namespace) -> int:
     return 0
 
 
+def _api(config: AppConfig, args: argparse.Namespace) -> int:
+    """Serve the local API, which reads state and operates the durable stop.
+
+    No route here can place, modify, or close an order. That is the property
+    this command exists to make available to another process without making an
+    account-changing endpoint available to it.
+    """
+    from ..application.kill_switch import FileKillSwitch
+    from ..infrastructure.logging import AuditLogger
+    from ..interfaces import StatusReporter, build_api_server, generate_api_token, kill_switch_path
+
+    if args.print_token:
+        print(generate_api_token())
+        return 0
+
+    token = args.token or config.api_token
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    reporter = StatusReporter(
+        config=config,
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+        kill_switch=kill_switch,
+    )
+    try:
+        server = build_api_server(
+            args.host,
+            args.port,
+            reporter,
+            kill_switch,
+            token,
+            audit=AuditLogger(config.log_directory).record,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+    print(f"auto-trade local API on {server.url}")
+    print("Every route requires the token, reads included. No route can place an order.")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+    finally:
+        server.server_close()
+    return 0
+
+
+def _terminal_check(config: AppConfig, args: argparse.Namespace) -> int:
+    """Report whether this MT5 build still presents the controls we measured.
+
+    This is the answer to "MetaTrader updated, is anything broken". It opens the
+    order dialog, reads it, and closes it again. It has no path that uses a final
+    control, so it cannot place an order even if every gate were somehow open.
+    """
+    from ..interfaces.preflight import compare_builds, record, run_check
+
+    if args.compare:
+        print(json.dumps(compare_builds(config), indent=2, default=str))
+        return 0
+    try:
+        summary = run_check(config)
+    except (AutoTradeError, OSError, ValueError, TimeoutError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not args.no_record:
+        summary["recorded_to"] = str(record(config, summary))
+    print(json.dumps(summary, indent=2, default=str))
+    print()
+    verdict = summary.get("verdict")
+    if verdict == "OK":
+        print(
+            "Every control this project uses is present with the identifier it was "
+            "measured with, on the build named above."
+        )
+    elif verdict == "PARTIAL":
+        print(
+            "Some controls were not probed (the list under not_probed says which). "
+            "That is not a pass: it is a control whose state is unknown."
+        )
+    else:
+        print(
+            "This build no longer presents every control this project measured. "
+            "The order and close paths will refuse rather than use a control that "
+            "moved, and no replacement value is guessed. Re-measure and update the "
+            "identifiers deliberately, or stay on the previous build."
+        )
+    return 0 if verdict in {"OK", "PARTIAL"} else 1
+
+
 def _execute_live(config: AppConfig, args: argparse.Namespace) -> int:
     if not args.confirm_demo:
         print("ERROR: --confirm-demo is required", file=sys.stderr)
+        return 2
+    untrusted = config.live_execution_refusal()
+    if untrusted:
+        print(f"ERROR: {untrusted}", file=sys.stderr)
         return 2
     if not config.policy.execution_enabled:
         print(
@@ -750,6 +929,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "dashboard":
         return _dashboard(config, args)
+    if args.command == "api":
+        return _api(config, args)
+    if args.command == "terminal-check":
+        return _terminal_check(config, args)
     if args.command == "evaluate":
         return _evaluate(config, args)
     if args.command == "fetch-signal":
