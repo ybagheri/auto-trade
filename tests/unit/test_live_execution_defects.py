@@ -470,3 +470,66 @@ def test_a_slow_but_successful_observation_is_not_cut_short() -> None:
 
     assert result.status is ExecutionStatus.ACCEPTED
     assert time.monotonic() - started < 1.0
+
+
+# -- 4: a control that was never found is not an unknown outcome ----------
+
+
+class PrepareFailingAdapter(RaisingAdapter):
+    """Fails while preparing the dialog, which is before any control is used.
+
+    This is the shape build 5430 produced: the order dialog opened, one of its
+    controls was not there, and the run stopped without clicking anything.
+    """
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(error)
+
+    def prepare_order(self, order: OrderRequest) -> None:
+        raise self.error
+
+    def execute_order(self, order: OrderRequest) -> Any:
+        raise AssertionError("nothing may be executed after preparation failed")
+
+    def verify_execution(self, order: OrderRequest) -> Any:
+        raise AssertionError("verification must not run when nothing was clicked")
+
+
+def test_a_missing_control_before_the_click_is_refused_not_unknown() -> None:
+    """`UNKNOWN` tells an operator to check the account, so it must be earned.
+
+    Nothing was clicked, so there is no trade to look for. Reporting it as
+    UNKNOWN invents an incident: on this build it happened on the very first
+    real-terminal run, and left an operator-facing record of a possible trade
+    that had never been placed.
+    """
+    adapter = PrepareFailingAdapter(AutomationError("Market Execution control was not found"))
+    workflow, events = workflow_for(adapter)
+
+    result = workflow.execute(request().signal)
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert result.state == ExecutionState.ORDER_REJECTED.value
+    assert "Market Execution control was not found" in result.message
+
+
+def test_a_refusal_before_the_click_is_still_audited() -> None:
+    """Downgrading the status must not make the failure disappear."""
+    adapter = PrepareFailingAdapter(AutomationError("field was not found"))
+    workflow, events = workflow_for(adapter)
+
+    workflow.execute(request().signal)
+
+    assert any(event.event_type == "result" for event in events)
+    assert any("field was not found" in (event.message or "") for event in events)
+
+
+def test_a_failure_after_the_click_is_still_unknown() -> None:
+    """The other direction: past `execute_order`, UNKNOWN is the honest answer."""
+    adapter = RaisingAdapter(AutomationError("dialog is gone"))
+    workflow, _ = workflow_for(adapter)
+
+    result = workflow.execute(request().signal)
+
+    assert result.status is ExecutionStatus.UNKNOWN
+    assert result.state == ExecutionState.UNKNOWN_EXECUTION.value

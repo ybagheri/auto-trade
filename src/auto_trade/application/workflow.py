@@ -209,10 +209,23 @@ class ExecutionWorkflow:
                 str(exc),
             )
         except AutomationError as exc:
-            if machine.state in {
-                ExecutionState.PREPARING_UI,
-                ExecutionState.EXECUTING,
-            }:
+            # Which of these two states is correct depends entirely on whether a
+            # final control could have been used yet. `UNKNOWN` tells an operator
+            # to go and check the account for a trade, so spending it on a
+            # failure to *find* a control invents an incident that never
+            # happened: the run stopped while preparing the dialog, and nothing
+            # was clicked. A refusal is the honest record, and it is still
+            # audited, so the failure is not lost.
+            if machine.state is ExecutionState.PREPARING_UI:
+                machine.transition(ExecutionState.ORDER_REJECTED)
+                return self._result(
+                    execution_id,
+                    signal,
+                    ExecutionStatus.REJECTED,
+                    ExecutionState.ORDER_REJECTED,
+                    str(exc),
+                )
+            if machine.state is ExecutionState.EXECUTING:
                 machine.transition(ExecutionState.UNKNOWN_EXECUTION)
             return self._result(
                 execution_id,
