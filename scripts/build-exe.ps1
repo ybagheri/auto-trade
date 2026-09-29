@@ -13,18 +13,26 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $buildRoot = Join-Path $root ".build"
 $venv = Join-Path $buildRoot "venv"
-$python = Join-Path $venv "Scripts\python.exe"
+
+# PowerShell variable names are case-insensitive, so this must not be called
+# `$Python`: that is the parameter above, and assigning here would replace the
+# development interpreter with a path that does not exist yet.
+$venvPython = Join-Path $venv "Scripts\python.exe"
 
 if (-not $SkipTests) {
     & (Join-Path $PSScriptRoot "test.ps1") -Python $Python
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-if (-not (Test-Path -LiteralPath $python)) {
+# The interpreter that creates the venv is the one passed in, not the one the
+# venv is about to contain.
+if (-not (Test-Path -LiteralPath $venvPython)) {
     Write-Host "Creating the build environment in $venv"
     & $Python -m venv $venv
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+
+$python = $venvPython
 
 Write-Host "Installing build requirements"
 & $python -m pip install --disable-pip-version-check --quiet --upgrade pip
@@ -32,8 +40,15 @@ Write-Host "Installing build requirements"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "Building the executable"
+# PyInstaller reports its progress on stderr, which PowerShell surfaces as an
+# error record. With `$ErrorActionPreference = "Stop"` that aborts a build that
+# in fact succeeded, so the preference is relaxed for this one call and the exit
+# code is trusted instead.
+$ErrorActionPreference = "Continue"
 & $python -m PyInstaller --noconfirm --clean (Join-Path $root "packaging\auto-trade.spec")
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($buildExit -ne 0) { exit $buildExit }
 
 $exe = Join-Path $root "dist\auto-trade\auto-trade.exe"
 if (-not (Test-Path -LiteralPath $exe)) {

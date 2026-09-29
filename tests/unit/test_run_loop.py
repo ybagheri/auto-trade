@@ -35,9 +35,14 @@ NOW = datetime(2026, 9, 29, 14, 0, 0, tzinfo=UTC)
 
 
 def _signal(signal_id: str) -> dict[str, Any]:
+    # Stamped relative to now, not pinned to a literal. The risk engine refuses
+    # a signal older than the configured lifetime, so a hard-coded timestamp
+    # makes every assertion in this file a function of the wall clock: the tests
+    # passed only while they were run within the lifetime of the instant they
+    # were written, and began failing on their own hours later.
     return {
         "id": signal_id,
-        "timestamp": "2026-09-29T14:00:00Z",
+        "timestamp": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "source": "test",
         "symbol": "EURUSD",
         "action": "BUY",
