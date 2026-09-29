@@ -64,9 +64,11 @@ record.
       `AVAILABLE` with a complete, advancing snapshot. See
       [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 4, 4a, 4b, 4c.
 - [x] Implement a guarded position close, proven by the snapshot.
-  - Only a position this application opened is closable, only through the
-      `Close Position` row menu entry, and only when the ticket disappears from an
-      independent observation. Confirmed live on 2026-09-28 (`CLOSED`).
+   - Only a position this application opened is closable, only through the
+       `Close Position` row menu entry, and only when the ticket disappears from an
+       independent observation. Confirmed live on 2026-09-28 (`CLOSED`) and again on
+       2026-09-29 on build 6230, where `execute` then `close-position` on the same
+       ticket returned `ACCEPTED` then `CLOSED` with no manual step in between.
 - [ ] Hedge, partial close, and modify: refused today. Each would need its own
       measured control identifiers and its own verification of the new state.
 
@@ -81,7 +83,13 @@ record.
 - [x] Document indicator signal bridge.
 - [x] Document EA signal bridge without order execution.
 - [x] Add a strategy plugin seam for a market-analysis library.
-- [ ] Add authenticated local APIs.
+- [x] Add authenticated local APIs.
+  - `python -m auto_trade api` serves a loopback-only, token-authenticated,
+    read-only API for programs, with a `LocalApiClient` so a caller does not
+    re-implement the rules. Every route requires the token, reads included, and
+    the query-string form is refused because a URL reaches proxy logs. It has
+    no endpoint that places, modifies, or closes an order: the only mutating
+    routes are the durable stop and its reset. See [local API](docs/API.md).
 
 ## Phase 8 — Testing
 
@@ -130,7 +138,14 @@ compiled. See [packaging](docs/PACKAGING.md).
       unmeasured phase reports `null`, never zero. See [metrics](docs/METRICS.md).
   - Still open: no alert or threshold, deliberately. A latency figure must never
       be able to look like a verdict on an outcome.
-- [ ] Security review and dependency review.
+- [x] Security review and dependency review.
+  - Two exploitable findings, both fixed with regression tests: a signal `id` was
+      used unvalidated as a file name, so any signal source could write outside the
+      signal directory; and a `.env` found in the working directory pre-empted the
+      reviewed one and could enable live execution. A third finding, an unhandled
+      exception from a slow process query, was found by the suite failing under
+      load. Three lower-severity items were reviewed and deliberately accepted with
+      the reasoning recorded. See [security review](docs/SECURITY_REVIEW.md).
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.
 - [x] Complete bilingual documentation synchronization.
   - The pages that describe a refusal, a recovery, or an observation now have a

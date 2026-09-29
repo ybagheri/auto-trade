@@ -21,6 +21,8 @@ Runtime configuration currently comes from environment variables with safe defau
 | `AUTO_TRADE_PIPE_SIGNAL_TOKEN` | unset | shared token for that pipe |
 | `AUTO_TRADE_WS_SIGNAL_URL` | unset | loopback `ws://` URL of the optional authenticated WebSocket source |
 | `AUTO_TRADE_WS_SIGNAL_TOKEN` | unset | shared token for that WebSocket source |
+| `AUTO_TRADE_API_URL` | unset | loopback URL of the local API, for a program that reads this one |
+| `AUTO_TRADE_API_TOKEN` | unset | token for the local API; required by it, never logged, never committed |
 
 `config/default.yaml` documents the intended human-readable shape. The current implementation does not parse YAML; do not assume a YAML edit changes runtime behavior.
 
@@ -33,3 +35,9 @@ clients or readers: they must be loopback or local, they must authenticate, and
 a fetched signal still passes the same gates as a signal file. Configure exactly
 one of the three network sources; two at once is refused rather than resolved.
 See [signal protocol](SIGNAL_PROTOCOL.md).
+
+The local API is a listener rather than a source, and it is the only local
+surface where a read needs a token: a status feed a program calls on a schedule
+can otherwise be read, or spoofed, by anything else on the machine. An empty
+`AUTO_TRADE_API_TOKEN` does not disable authentication, it makes
+`python -m auto_trade api` exit with an error. See [local API](API.md).

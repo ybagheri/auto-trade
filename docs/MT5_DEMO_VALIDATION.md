@@ -6,7 +6,15 @@ demo position has to be opened by hand and then accepted by the independent
 verifier. This file is the runbook for those steps and the record the repository
 keeps of what was actually observed.
 
-## Environment, measured on this machine
+**Both were performed, on two different terminals.** The 2026-09-28 session
+measured Alpari MT5 build 6184 and is the record for the guarded order and the
+guarded close. The 2026-09-29 session re-pointed `.env` at a per-user install
+of **build 6230** and re-measured the observation path there from scratch; see
+[The 2026-09-29 session](#the-2026-09-29-session--a-different-install-re-verified-from-scratch).
+The two sections are deliberately not merged, because a result on one build is
+not a result on the other.
+
+## Environment, measured on 2026-09-28
 
 Measured 2026-09-28 with the project's own `diagnostics`, discovery, and install
 script. No value here is assumed.
@@ -29,6 +37,151 @@ script. No value here is assumed.
 
 A second terminal exists on this machine (`Alpari MT5_2`, build 6230, AMarkets
 demo). It is not the configured instance and was not touched.
+
+## The 2026-09-29 session — a different install, re-verified from scratch
+
+The configured instance was changed to a per-user install, so **every row above
+describes a different terminal from the one now in `.env`**. Nothing in the
+2026-09-28 record transfers automatically, and this section re-measured what
+matters rather than assuming it.
+
+| Fact | Value |
+| --- | --- |
+| Terminal | `C:\Users\bagheri\AppData\Roaming\Alpari MT5_5\terminal64.exe`, **build 6230** |
+| Data directory | `C:\Users\bagheri\AppData\Roaming\MetaQuotes\Terminal\BF4EF096D1140DE6DC1607EA4FC613AB` |
+| Account | `53183488`, server `Alpari-MT5-Demo` |
+| Indicator build | `MetaEditor64.exe /compile:` reported `0 errors, 0 warnings` |
+| Indicator attached | yes, to a chart, after a human attach |
+| Snapshot at rest | `AVAILABLE`, `complete: true`, `terminal_build: 6230`, sequence advancing 138 → 273 |
+| Account state at the end | `positions: []`, no pending or unknown execution record, kill switch not engaged |
+
+**The build is 6230, not the 6184 recorded above.** This is a different
+terminal build on a different install, so the control identifiers, the window
+title, and the data directory are all different values. The rows above remain
+the record of what was measured on 6184 and are not restated here.
+
+Four terminals on this machine share the window title `Alpari-MT5-Demo`
+(accounts 53183409, 53183488, 53183424, 53145727) and a fifth is
+`AMarkets-Demo`. Discovery still reported `terminal_discovery: found` for the
+configured instance, because it matches the configured executable path and data
+directory rather than the title. **A shared title is therefore not ambiguous
+here, and the project did not have to guess** — but that is a property of
+matching on path and data identity, not of the title matching.
+
+A snapshot from this session, read for its shape:
+
+```json
+{
+  "schema": 1, "sequence": 138, "complete": true,
+  "written_at": "2026-09-29T05:20:14Z",
+  "account": 53183488, "server": "Alpari-MT5-Demo", "terminal_build": 6230,
+  "positions": []
+}
+```
+
+## Step 1 and Step 2 re-measured on 2026-09-29
+
+Both were performed by the operator on build 6230, and both passed. Step 1
+confirmed the snapshot; Step 2 confirmed that a position the operator opened by
+hand is observable, which is the case the 2026-09-28 record had marked
+`SUPERSEDED` rather than performed.
+
+The full open-close cycle was observed, which is the part that matters: an
+empty account, a position appearing with the fields the verifier needs, and the
+account empty again. A snapshot that only ever reported `[]` would have proved
+nothing, and neither would one that reported a position it could not later lose.
+
+| # | Date | Terminal | Account | Item | Symbol / action / volume | Expected | Actual | Verification method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 7 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | configured paths exist and discovery resolves this instance | — | paths resolve, one match | `terminal_discovery: found`; `terminal_exists` and `data_path_exists` true | `diagnostics`, `diagnostics-bundle` | PASS |
+| 8 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | indicator compiles on this build | — | 0 errors, 0 warnings, `.ex5` written | `0 errors, 0 warnings` | `MetaEditor64 /compile` with log | PASS |
+| 9 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | indicator snapshot observed | — | `AVAILABLE`, `complete: true`, sequence advancing | `AVAILABLE`, sequence 138 → 273, `positions: []` matching an empty Trade tab | `position-snapshot` | PASS |
+| 10 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | snapshot reports `UNAVAILABLE` before the indicator was attached | — | missing snapshot is never read as an empty account | `UNAVAILABLE`, `no position snapshot found in …\MQL5\Files` | `position-snapshot` | PASS |
+| 11 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | position opened by hand is observed | EURUSD BUY 0.01 | one position with the chosen symbol, side, and volume | `AVAILABLE`, `position_id 383037521`, `EURUSD`, `BUY`, `0.01` | `position-snapshot` | PASS |
+| 12 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | position closed by hand disappears from the observation | EURUSD BUY 0.01 | the account returns to empty | `AVAILABLE`, `positions: []` | `position-snapshot` | PASS |
+| 13 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | account left as found | — | no open position, no pending record, no stop | `positions: []`; `recovery` empty; `logs\KILL_SWITCH` absent | `position-snapshot`, `recovery` | PASS |
+| 14 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | real-terminal dry-run, BUY | EURUSD BUY 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`, `final execution control not used` | `dry-run` on the live terminal, then `position-snapshot` and `recovery` | PASS |
+| 15 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | real-terminal dry-run, SELL | EURUSD SELL 0.01 | dialog prepared, no final control, no position | `ORDER_READY` then `DRY_RUN_COMPLETED`, `final execution control not used` | same | PASS |
+| 16 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | control identifiers unchanged after the update to build 6230 | — | every measured control still present with the measured value | `verdict OK`, 13 controls, none drifted and none missing; `10408`, `10409`, `10325`, `10333`, `10334`, `10336`, `10328` all as measured on 6184 | `terminal-check`, read-only | PASS |
+| 17 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | the right terminal is driven among five running ones | — | the window is pinned to the resolved process, not chosen by title | window selected by pid 5680 while four other terminals shared the `Alpari-MT5-Demo` title | `terminal-check`, `WindowsTerminalDiscovery.resolve` | PASS, DEFECT FOUND AND FIXED |
+| 18 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | guarded demo order, broker rejected it | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` | `UNKNOWN`, `VERIFICATION_FAILED`, `no new matching position detected`. The click did reach MT5, which logged `market buy 0.01 EURUSD` and then `failed market buy 0.01 EURUSD [Request rejected due to absence of network connection]`. The account held no order and no position, and the terminal resynchronised reporting `0 positions, 0 orders` | `execute --confirm-demo`; the terminal journal `<data dir>\logs\20260929.log`; live snapshot; `recovery` | PASS, CORRECTLY REFUSED, DEFECT FOUND AND FIXED |
+| 19 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | staleness guard on a real old snapshot | EURUSD BUY 0.01 | a stale snapshot is refused before the order dialog is used, never read as an empty account | four attempts refused with `refusing to execute: position snapshot is stale (129.4s old, limit 30s)`, `(369.8s…)`, `(406.1s…)`, `(485.9s…)`; the terminal journal records **no** trade for any of them | `execute --confirm-demo` with the indicator detached; `logs\idempotency.json` shows all four as `REJECTED` / `ORDER_REJECTED` | PASS |
+| 20 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | guarded demo order, accepted | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` with evidence | `ACCEPTED`, `order_reference 383083883`, baseline `ui positions=none`, observed `ui positions=383083883:EURUSD:BUY:0.01`. The journal agrees: `accepted market buy 0.01 EURUSD`, `deal #339578159 buy 0.01 EURUSD at 1.13456 done (based on order #383083883)` | `execute --confirm-demo`, then the live snapshot and the terminal journal | PASS |
+| 21 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | the close path refuses a position this application did not open | EURUSD BUY 0.01, ticket `383094933`, opened by hand | refused, nothing clicked | exit code 2, `ticket 383094933 is not in the execution ledger, so it is not a position this application opened; close it by hand`. No `position-close` audit event exists, so the refusal happened before any UI work | `close-position --confirm-demo` | PASS |
+| 22 | 2026-09-29 | Alpari MT5_5 6230 | 53183488 | guarded order and guarded close, back to back | EURUSD BUY 0.01, ticket `383098717` | `ACCEPTED` then `CLOSED`, each proved by independent observation | `ACCEPTED`, `order_reference 383098717`, baseline `ui positions=none`, observed `ui positions=383098717:EURUSD:BUY:0.01`; then `CLOSED`, `position 383098717 is no longer present in the observed snapshot (1 before, 0 after)`. The journal agrees with both: `deal #339591761 buy 0.01 EURUSD at 1.13495 done (based on order #383098717)` and `accepted market sell 0.01 EURUSD, close #383098717` | `execute --confirm-demo` then `close-position --confirm-demo` on the same ticket, with no manual step in between | PASS |
+
+
+**Row 18 is a broker rejection, which was one of the two rows this file listed
+as unfilled.** It arrived by accident rather than by plan, and it is the most
+useful result in the table, because it exercises the case the whole design
+exists for: a click that lands, an outcome that cannot be proven, and an
+application that says `UNKNOWN` rather than claiming a trade.
+
+The click reached MT5, so **the control identifiers are correct on build 6230** —
+row 16 said they were unchanged, and this confirms it end to end. The order was
+then rejected for lack of a network connection, which is a broker-side event no
+gate in this project can prevent, and the correct response is exactly what
+happened: no position, no `order_reference`, and an `UNKNOWN` record for a person
+to look at.
+
+**A defect came out of it.** The `UNKNOWN` result carried no evidence, because
+the workflow discarded the readings the adapter had already taken. Those readings
+were the entire basis for "no new matching position", and they existed. Evidence
+is now carried on the failed path as well as the accepted one, with three
+regression tests. The ledger record for this attempt still predates the fix and
+shows `evidence: null`; that is correct history, not an error to correct by hand.
+
+### The rows that remain
+
+**Both controls that change an account are now measured on build 6230.** Row 22
+is the one that matters: an `execute` and then a `close-position` on the same
+ticket, with no manual step between them, each proved by an observation and each
+independently confirmed by the terminal's own journal. The account was left with
+no position and no order.
+
+Taken with rows 16 to 21, the whole surface is exercised on this build: the
+control identifiers, the window selection among five terminals, the staleness
+guard, a broker rejection, an accepted fill, a refused foreign ticket, and a
+guarded close.
+
+**Still open, and not about the terminal:** a stale snapshot that later becomes
+fresh and the order then proceeding, which is the recovery half of row 19. And
+the operator has one `UNKNOWN` record left to settle, which is a judgement about
+what they saw rather than anything the code can measure.
+
+
+## Clicks that left no record in this application
+
+Between 10:52 and 10:55 local the terminal journal records six `market buy` and
+one `market sell` lines, and only two of them correspond to a signal this
+application processed. The others produced **no ledger record and no audit
+event**, which is the signature of a human clicking in the terminal rather than
+of this project: the workflow writes `record_attempt` to the durable ledger
+*before* the final control is used, so a click by this application cannot exist
+without a record. That ordering is what makes the absence meaningful rather than
+merely unobserved.
+
+The account was left with no position and no order.
+
+
+
+**What rows 9 to 12 do and do not prove.** They prove the read-only observation
+path on this build: the snapshot is live, complete, advancing, and it reflects a
+real open and a real close. They do **not** prove that the guarded *order* path
+works on build 6230. That path is untested here, and its control identifiers
+were measured on 6184, so it is not a given that they carry over. Rows 6 and 6a
+remain the only evidence for the guarded order, and they are evidence about a
+different build.
+
+Row 10 is a row that records a **failure being reported correctly**: before the
+indicator was attached, the reader said `UNAVAILABLE` with a reason rather than
+`AVAILABLE` with an empty list. That distinction is the whole point of the
+fail-closed reader, and it was observed rather than assumed.
+
+**Not repeated on 2026-09-29:** the staleness guard on a real old file, the
+real-terminal BUY and SELL dry-runs, the guarded order, and the guarded close.
+The first three need only this terminal and are the next thing worth running;
+the last two change the account and remain an operator decision.
 
 ### What a real snapshot looks like
 
@@ -78,6 +231,9 @@ and one order decision, both of which belong to the operator.
 
 ## Step 1 — attach the indicator and confirm the snapshot
 
+**Done 2026-09-28 on build 6184 (row 4) and again on 2026-09-29 on build 6230
+(row 9).** The procedure is kept because a future install needs it again.
+
 1. In the running terminal, open a chart: double-click `EURUSD` in Market Watch
    (or any symbol on the whitelist).
 2. Press `Ctrl+I`, or use the indicator button on the chart toolbar.
@@ -99,11 +255,12 @@ count, expected result, actual result, verification method, status.
 
 ## Step 2 — open a demo position by hand and confirm verification accepts it
 
-**Superseded on 2026-09-28.** A position created by the guarded execution path
-itself reached `ACCEPTED` with evidence, which exercises the same observation
-path, so the record was closed through that route instead. The procedure stays
-here because it remains the way to test a position this project did not create,
-and because a hand-placed fill is the case the broker, not the bridge, decided.
+**Performed 2026-09-29 on build 6230 (rows 9 to 12).** On 2026-09-28 this step
+had been marked `SUPERSEDED` because a position created by the guarded execution
+path itself reached `ACCEPTED` with evidence. It has now been done directly, so
+the hand-placed case is measured rather than inferred. The 2026-09-28
+observation is kept because it remains the only evidence for the guarded order
+path.
 
 1. With the indicator still attached, open one position by hand from the Trade
    tab: pick a whitelisted symbol, `BUY`, the minimum volume, and confirm.
@@ -202,5 +359,20 @@ Position` on a single row is ever used.
 | 6 | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | guarded demo order, first attempt | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` | `UNKNOWN`: the order filled as ticket `382626466`, but a defect after the click made the outcome unprovable | `execute --confirm-demo`; position later seen in the snapshot and closed by hand | PARTIAL, DEFECT FOUND |
 | 6a | 2026-09-28 | Alpari MT5 6184 | Alpari-MT5-Demo | guarded demo order, after the fix | EURUSD BUY 0.01 | `REQUESTED` then `ACCEPTED` with evidence | `ACCEPTED`, `order_reference 382631622`, baseline `ui positions=none`, observed `ui positions=382631622:EURUSD:BUY:0.01` | `execute --confirm-demo`, then `position-snapshot` and the audit trail | PASS |
 
-Rows 4 to 6 stay open until a person runs the steps above. Nothing in this
-repository may mark them passed on their behalf.
+Rows 1 to 6 were measured on 2026-09-28 on **build 6184**; rows 7 to 17 were
+measured on 2026-09-29 on **build 6230**. A row is marked `PASS` only for the
+build named in that row. Nothing in this repository may mark a row passed on an
+operator's behalf, and a result on one build is not a result on the other.
+
+**Row 16 is the answer to "did the MetaTrader update break anything": no.** Every
+identifier measured on build 6184 is still correct on build 6230 — both final
+controls, all four order fields, and the trade grid. The final controls are
+matched by name *and* id, so this says both survived. It does not by itself prove
+the guarded order path works on 6230; it proves nothing it depends on has moved.
+
+**Row 17 records a defect found while checking.** `MT5WindowManager.find()`
+selected a window by title and took the first match. With four demo terminals
+sharing one title, that chose an account by enumeration order, and the demo check
+that follows would have passed for all of them. The window is now selected by
+process id, and an ambiguous title match is refused. See
+[MT5 integration](MT5_INTEGRATION.md).

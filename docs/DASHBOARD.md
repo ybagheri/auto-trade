@@ -35,6 +35,13 @@ still be treated as sensitive.
 or closes an order. The only mutating routes are `/api/emergency-stop` and
 `/api/resume`. Execution stays in the CLI and the workflow.
 
+**Reads are unauthenticated here, and that is a deliberate difference from the
+local API.** The `GET` routes above need no token, because the page is opened by
+a person who is already at the machine. A program that calls on a schedule is a
+different case: an unauthenticated status feed can be read, or spoofed, by
+anything else on the machine. The [local API](API.md) therefore requires the
+token on every route, reads included.
+
 **Response hardening.** JSON replies set `Cache-Control: no-store` and
 `X-Content-Type-Options: nosniff`. The page sets a `Content-Security-Policy` of
 `default-src 'none'` with only inline style and script, so it cannot load a
@@ -96,4 +103,4 @@ distinguishable. The dashboard never opens or drives the MT5 window.
 durability of the stop across instances, and the read-only endpoints. It binds
 port 0 on loopback only, so it needs no MT5 and no fixed port.
 
-[فارسی](fa/DASHBOARD.md) · [metrics](METRICS.md) · [recovery](RECOVERY.md)
+[فارسی](fa/DASHBOARD.md) · [local API](API.md) · [metrics](METRICS.md) · [recovery](RECOVERY.md)

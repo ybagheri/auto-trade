@@ -16,6 +16,12 @@ This project leaves local artifacts and creates ordinary broker-visible trade re
 
 The position reader writes snapshots but does not write a custom log and does not send anything over the network. The files are local.
 
+The [local API](API.md) is a loopback listener, which is a network surface even
+though it never leaves the machine. Every request to it is recorded in the same
+local audit log as everything else, with the route and the outcome and without
+the token. A caller on this machine is a local process, not a broker-visible
+trace, and nothing it can ask for changes an account.
+
 A diagnostics bundle is a copy of these artifacts, written wherever the operator
 points it and therefore shareable. It contains no credential: `.env` is excluded,
 the HTTP signal token is reported only as configured or not, and the endpoint URL

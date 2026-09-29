@@ -41,6 +41,21 @@ python -m auto_trade position-snapshot
 
 A successful read reports `AVAILABLE` and a position list. An unavailable, stale, or missing snapshot is never treated as an empty account.
 
+**Confirm the build before you trust a record.** The snapshot carries
+`terminal_build`, and this project has measured two of them: build 6184 on
+2026-09-28 and build 6230 on 2026-09-29, on different installs. A `PASS` in
+[demo validation](MT5_DEMO_VALIDATION.md) is evidence for the build named in
+that row and not for another one. In particular, the observation path is
+measured on 6230 while the guarded order and close paths are not, so a
+successful read here says nothing about whether the order controls are still
+where they were on 6184.
+
+**An empty list is only meaningful next to the Trade tab.** A snapshot that
+always reports `[]` is indistinguishable from a reader that is looking at the
+wrong directory. The position was therefore opened and closed by hand on
+2026-09-29 and both ends of that cycle were observed, which is what makes the
+empty account above it trustworthy.
+
 ## Execution relationship
 
 The indicator only supplies the baseline and post-click observation. The order itself is still performed by the guarded MT5 desktop control, not by the indicator. A click is reported as `REQUESTED`; only an independent matching position observation can produce `ACCEPTED`.

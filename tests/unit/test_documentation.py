@@ -24,12 +24,14 @@ FA = DOCS / "fa"
 # Every page that exists in both languages. Adding a pair is a deliberate act:
 # the new name goes here, and the test below then requires the link both ways.
 PAIRS: tuple[str, ...] = (
+    "API.md",
     "DASHBOARD.md",
     "EXECUTION.md",
     "METRICS.md",
     "POSITION_READER.md",
     "RECOVERY.md",
     "SAFETY.md",
+    "SECURITY_REVIEW.md",
     "SIGNAL_PROTOCOL.md",
     "STRATEGY_INTEGRATION.md",
     "TRACEABILITY.md",
@@ -52,6 +54,7 @@ ENGLISH_ONLY: dict[str, str] = {
     "MT5_INTEGRATION.md": "machine-specific paths and process discovery details",
     "MT5_DEMO_VALIDATION.md": "a measured validation record whose rows must not be reworded",
     "SESSION_2026-09-28.md": "a dated handoff note for one session; a later one supersedes it",
+    "SESSION_2026-09-29.md": "a dated handoff note for one session; a later one supersedes it",
 }
 
 LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
@@ -176,23 +179,27 @@ def test_a_translation_does_not_silently_drop_a_safety_section() -> None:
     survive.
     """
     expected = {
+        "API.md": "It is not an execution API",
         "EXECUTION.md": "refused by default",
         "RECOVERY.md": "No automatic recovery action is provided",
         "DASHBOARD.md": "Loopback only",
         "METRICS.md": "What these figures are not",
+        "SECURITY_REVIEW.md": "Accepted, not fixed",
     }
 
     for name, marker in expected.items():
         assert marker in read(DOCS / name), f"docs/{name} no longer states: {marker}"
 
-    # The Persian pages must each carry a section equivalent to it. These are
-    # the headings, checked verbatim so a rename breaks the test rather than
+    # The Persian pages must each carry a section equivalent to it. These are the
+    # headings, checked verbatim so a rename breaks the test rather than
     # quietly dropping the subject.
     for name, heading in {
+        "API.md": "## ویژگی‌های ایمنی",
         "EXECUTION.md": "## دروازه‌ها",
         "RECOVERY.md": "## قواعد",
         "DASHBOARD.md": "## ویژگی‌های ایمنی",
         "METRICS.md": "## این اعداد چه نیستند",
+        "SECURITY_REVIEW.md": "## پذیرفته‌شده، رفع‌نشده",
     }.items():
         assert heading in read(FA / name), f"docs/fa/{name} is missing the section {heading}"
 
@@ -204,6 +211,21 @@ def test_the_persian_pages_keep_the_codes_they_describe() -> None:
     typo, and these strings are what an operator compares against real output.
     """
     expected: dict[str, tuple[str, ...]] = {
+        "API.md": (
+            "127.0.0.1",
+            "::1",
+            "X-Auto-Trade-Token",
+            "constant_time_equals",
+            "/api/v1/execute",
+            "--confirm-demo",
+        ),
+        "SECURITY_REVIEW.md": (
+            "SIGNAL_ID_PATTERN",
+            "AUTO_TRADE_ENABLE_EXECUTION",
+            "AUTO_TRADE_ENV_FILE",
+            "json.loads",
+            "--confirm-demo",
+        ),
         "EXECUTION.md": (
             "10408",
             "10409",

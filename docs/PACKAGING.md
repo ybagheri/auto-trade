@@ -90,9 +90,13 @@ Smoke test a build before trusting it:
 .\dist\auto-trade\auto-trade.exe diagnostics
 .\dist\auto-trade\auto-trade.exe diagnostics-bundle
 .\dist\auto-trade\auto-trade.exe dashboard
+.\dist\auto-trade\auto-trade.exe api --print-token
 ```
 
-A build that cannot pass those three commands is not a working build.
+A build that cannot pass those commands is not a working build. The last one
+proves the `api` command is in the frozen build without starting a listener:
+`--print-token` prints a token and exits, and starting the server needs
+`AUTO_TRADE_API_TOKEN` set or `--token` passed.
 
 ## Installer
 

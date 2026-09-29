@@ -22,13 +22,16 @@ A safety-first Windows desktop execution bridge for MetaTrader 5. The project se
 - Independent risk engine with symbol whitelist, volume, expiration, rate, connection, and position limits.
 - Kill switch, demo-only policy, dry-run workflow, duplicate signal protection, and explicit unknown execution state.
 - Execution state machine with logged transitions.
-- Windows MT5 process discovery using configured executable path and data directory.
+- Windows MT5 process discovery using configured executable path and data directory, with the window then selected by the resolved process id. An ambiguous window title is refused rather than resolved.
 - Semantic UIA order-dialog preparation with bounded readiness checks and no coordinate-based order controls.
 - Position-change verification abstraction with a fail-closed read-only indicator snapshot provider and durable JSON execution ledger for restart-safe idempotency.
 - Rotating JSONL audit logging.
 - Counters and per-phase latency derived from that audit log, so a run that
   crashed is still measured. See [metrics](docs/METRICS.md).
 - Local read-only status dashboard with a durable, token-guarded emergency stop.
+- A loopback-only local API for programs, token-authenticated on every route
+  including reads, with no endpoint that can place an order. See
+  [local API](docs/API.md).
 - CLI diagnostics, a zipped diagnostics bundle, a configuration wizard, and
   non-executing dry-run processing.
 - Mocked unit and integration tests that do not require MT5.
@@ -93,7 +96,7 @@ The independent observation path is a read-only MQL5 indicator, not a service an
     -MetaEditor "C:\Program Files\Alpari MT5_2\MetaEditor64.exe"
 ```
 
-Attach `AutoTradePositionReader` to a chart once. It reads positions and writes a local snapshot; it contains no `OrderSend`, trade request, or custom log. MT5 may still record indicator load/attachment in its own Journal. The attach step is a human action, because MT5's grids and context menus are not exposed to UI Automation; the measured procedure and the validation record are in [demo validation](docs/MT5_DEMO_VALIDATION.md). See [position reader](docs/POSITION_READER.md).
+Attach `AutoTradePositionReader` to a chart once. It reads positions and writes a local snapshot; it contains no `OrderSend`, trade request, or custom log. MT5 may still record indicator load/attachment in its own Journal. The attach step is a human action, because MT5's grids and context menus are not exposed to UI Automation; the measured procedure and the validation record are in [demo validation](docs/MT5_DEMO_VALIDATION.md), which records two different terminal builds separately. See [position reader](docs/POSITION_READER.md).
 
 ## Installation
 
@@ -122,6 +125,8 @@ python -m auto_trade evaluate --symbol BITCOIN
 python -m auto_trade fetch-signal
 python -m auto_trade diagnostics-bundle
 python -m auto_trade dashboard
+python -m auto_trade api
+python -m auto_trade terminal-check
 ```
 
 A signal expires at `timestamp + expiration_seconds` unless it carries an explicit
@@ -159,6 +164,15 @@ loopback only and refuses any other address, and its mutating endpoints require 
 printed control token. It has no endpoint that can place an order. The stop is
 written to a file, so it applies to other processes and survives a restart. See
 [dashboard](docs/DASHBOARD.md).
+
+## Local API
+
+`python -m auto_trade api` serves the same views to a *program* rather than to a
+page. Every route requires a token, reads included, and it binds loopback only.
+It has no endpoint that can place, modify, or close an order: the only mutating
+routes are the durable stop and its reset, which can only make the system more
+conservative. `LocalApiClient` is included so a caller does not re-implement the
+authentication and loopback rules. See [local API](docs/API.md).
 
 ## Demo Mode
 
@@ -228,20 +242,31 @@ have numpy installed for unrelated reasons.
 
 Current automated status:
 
-- **PASS — mocked:** 412 unit and integration tests executed.
+- **PASS — mocked:** 513 unit and integration tests executed.
 - **PASS — crash between the click and the observation:** the durable record stays pending, a restarted process refuses the same signal without touching the terminal, and only an operator can settle it. See [recovery](docs/RECOVERY.md).
 - **PASS — metrics and latency:** counters and per-phase timing, derived from the audit log so a crashed run is still measured. An unmeasured phase reports nothing rather than a zero. See [metrics](docs/METRICS.md).
-- **PASS — environment:** Alpari MT5 build 6184 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery.
-- **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to the `EURUSD,M5` chart.
-- **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position.
+- **PASS — environment:** Alpari MT5 at a per-user path, its data directory, and the running `Alpari-MT5-Demo` process were found and identified by the project's own discovery, on build 6184 and again on build 6230 with four same-titled terminals running.
+- **PASS — indicator build:** `AutoTradePositionReader` compiles with 0 errors and 0 warnings, is registered under Navigator → Indicators, and is attached to a chart. Confirmed on build 6184 and again on build 6230.
+- **PASS — position snapshot:** `position-snapshot` reports `AVAILABLE` from a live, complete, advancing snapshot, and the account it describes has no open position. Sequence observed advancing 138 → 273 on 6230.
+- **PASS — position observed opening and closing (build 6230):** a position opened by hand was reported with its ticket, symbol, side, and volume, and was gone again from an independent observation after being closed by hand. A snapshot that only ever reported an empty account would have proved nothing. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
 - **PASS — staleness guard:** a real snapshot from an earlier session is refused as `stale`, not read as an empty account.
+- **PASS — fail-closed before attach (build 6230):** with no snapshot present, `position-snapshot` reported `UNAVAILABLE` with a reason rather than an empty account.
 - **PASS — controlled dry-run:** real-terminal BUY and SELL dry-runs on this build reached `ORDER_READY` and closed without a final control, with no position afterwards.
-- **AWAITING MANUAL STEP — position verification:** the snapshot path is confirmed, but no position has been opened by hand yet, so the verifier has not accepted a real position. One click in the Trade tab, then read the snapshot. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
-- **PASS — guarded demo order:** a real `execute --confirm-demo` on the demo account returned `ACCEPTED` with `order_reference`, an empty baseline, and the observed position in the evidence. The first attempt returned `UNKNOWN` and exposed three post-click defects, all fixed. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
-- **PASS — guarded position close:** `close-position 382652281 --confirm-demo` returned `CLOSED`, with the ticket gone from an independent observation. Only a position this application opened is closable, and only through the `Close Position` row menu entry. See [execution](docs/EXECUTION.md).
+- **PASS — staleness guard on a real old snapshot (build 6230):** four live orders were refused with `refusing to execute: position snapshot is stale (…s old, limit 30s)`, and the terminal journal records no trade for any of them. This is the gate that stopped real orders from being placed against a baseline it could not trust.
+- **PASS — guarded demo order (build 6230):** after an earlier attempt was correctly reported `UNKNOWN` because the **broker rejected it** for lack of a network connection, a later attempt returned `ACCEPTED` with `order_reference 383083883` and evidence, and the terminal journal confirms the fill independently. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
+- **PASS — close refused for a position this application did not open (build 6230):** a hand-opened ticket was declined with `not in the execution ledger`, and no `position-close` audit event exists, so it refused before touching the UI.
+- **PASS — guarded demo order and close, back to back (build 6230):** `execute --confirm-demo` returned `ACCEPTED` with `order_reference 383098717` and evidence, then `close-position --confirm-demo` on the same ticket returned `CLOSED` — `position 383098717 is no longer present in the observed snapshot (1 before, 0 after)` — with no manual step in between. The terminal journal independently confirms both the fill and the close. This is the first time both controls that change an account have been exercised end to end on this build. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
+- **PASS — guarded demo order (build 6184):** a real `execute --confirm-demo` on the demo account returned `ACCEPTED` with `order_reference`, an empty baseline, and the observed position in the evidence. The first attempt returned `UNKNOWN` and exposed three post-click defects, all fixed. See [demo validation](docs/MT5_DEMO_VALIDATION.md).
+- **PASS — guarded position close (build 6184):** `close-position 382652281 --confirm-demo` returned `CLOSED`, with the ticket gone from an independent observation. Only a position this application opened is closable, and only through the `Close Position` row menu entry. See [execution](docs/EXECUTION.md).
 - **NOT RUN — real execution:** no real BUY/SELL click or broker order was attempted.
 - **MANUAL TEST REQUIRED:** actual symbol switching, DPI behavior, and broker rejection handling.
 - **PASS — dashboard:** loopback-only server with token-guarded mutations and a durable emergency stop.
+- **PASS — local API:** every route refuses without a token, reads included; an
+  account-changing route is refused with a reason; the durable stop, its reset,
+  and their audit records were exercised against a running server. See
+  [local API](docs/API.md).
+- **PASS — an MT5 update is checked, not discovered by accident:** `terminal-check` probes the live order dialog read-only and reports every control this project measured, filed under the terminal build. On build 6230 it reported `OK` for all 13 controls, so the update moved nothing. It cannot place an order: there is no code path from it to a final control. See [MT5 integration](docs/MT5_INTEGRATION.md).
+- **PASS — the right terminal when several are open:** the window is selected by the process id discovery resolved, never by its title. Four of five running terminals shared the title `Alpari-MT5-Demo`; this was a real defect and choosing between same-titled windows is now refused.
 - **PASS — executable:** the Windows build runs `diagnostics`, `diagnostics-bundle`, `dry-run --mock`, and the dashboard; built with Python 3.13 here, so rebuild on the 3.12 baseline.
 - **NOT RUN — installer:** the Inno Setup definition was never compiled, because Inno Setup is not installed here.
 
@@ -250,6 +275,7 @@ Current automated status:
 - [Architecture assessment](docs/ARCHITECTURE_ASSESSMENT.md)
 - [Project status](docs/STATUS.md)
 - [Session summary, 2026-09-28](docs/SESSION_2026-09-28.md)
+- [Session summary, 2026-09-29](docs/SESSION_2026-09-29.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Signal protocol](docs/SIGNAL_PROTOCOL.md)
@@ -260,6 +286,8 @@ Current automated status:
 - [Verification](docs/VERIFICATION.md)
 - [Position reader](docs/POSITION_READER.md) · [فارسی](docs/fa/POSITION_READER.md)
 - [Dashboard](docs/DASHBOARD.md) · [فارسی](docs/fa/DASHBOARD.md)
+- [Security review](docs/SECURITY_REVIEW.md) · [فارسی](docs/fa/SECURITY_REVIEW.md)
+- [Local API](docs/API.md) · [فارسی](docs/fa/API.md)
 - [Strategy integration](docs/STRATEGY_INTEGRATION.md) · [فارسی](docs/fa/STRATEGY_INTEGRATION.md)
 - [Execution](docs/EXECUTION.md) · [فارسی](docs/fa/EXECUTION.md)
 - [Traceability inventory](docs/TRACEABILITY.md) · [فارسی](docs/fa/TRACEABILITY.md)
