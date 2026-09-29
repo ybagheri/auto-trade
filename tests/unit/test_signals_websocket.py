@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import socket
+import time
 import struct
 import threading
 from collections.abc import Callable, Iterator
@@ -207,11 +208,148 @@ def test_websocket_provider_authenticates_before_reading_a_signal(
         provider.stop()
 
 
+# -- the checks that were only true at one moment in time -----------------
+
+
+def test_the_loopback_check_also_runs_when_the_connection_is_opened() -> None:
+    """`url` is a public attribute, so validating only in `start()` is not enough.
+
+    Anything that rewrites it between `start()` and the first `receive()` would
+    otherwise be connected to without ever being checked, which would make
+    "stays on loopback" a claim about a moment in the past rather than a
+    property of the socket being opened.
+    """
+    provider = WebSocketSignalProvider("ws://127.0.0.1:1/signals", TOKEN)
+    provider.start()
+    provider.url = "ws://example.com:80/signals"
+
+    with pytest.raises(SignalSourceError, match="must stay on loopback"):
+        provider.receive()
+
+    assert provider._socket is None
+
+
+def test_the_loopback_check_runs_again_for_every_reconnect() -> None:
+    """Reconnecting must not reuse a verdict reached for an earlier address."""
+    provider = WebSocketSignalProvider("ws://127.0.0.1:1/signals", TOKEN)
+    provider.start()
+    provider.url = "ws://127.0.0.1.nip.io:80/signals"
+
+    with pytest.raises(SignalSourceError, match="must stay on loopback"):
+        provider.receive()
+
+
 def test_websocket_provider_refuses_a_wss_endpoint() -> None:
     provider = WebSocketSignalProvider("wss://127.0.0.1:8787/signals", TOKEN)
 
     with pytest.raises(SignalSourceError, match="wss is not implemented"):
         provider.start()
+
+
+# -- the token is the token, not something that renders as it ------------
+
+
+def test_websocket_provider_refuses_a_numeric_auth_that_renders_as_the_token(
+    server: Callable[..., ScriptedServer],
+) -> None:
+    """A JSON number must not authenticate by rendering to the token's text.
+
+    The token is the value the operator configured. Coercing the peer's value
+    with `str()` means a peer that sends the number `918273645` opens the
+    session having never sent the configured secret at all.
+    """
+
+    def script(connection: socket.socket) -> None:
+        # A bare JSON number, not the string.
+        connection.sendall(text_frame(json.dumps({"auth": 918273645})))
+        connection.sendall(text_frame(json.dumps(signal_data("ws-numeric"))))
+        connection.recv(64)
+
+    instance = server(script)
+    provider = WebSocketSignalProvider(instance.url, "918273645", timeout=5)
+    provider.start()
+    try:
+        with pytest.raises(SignalSourceError, match="failed authentication"):
+            provider.receive()
+    finally:
+        provider.stop()
+
+
+def test_websocket_provider_refuses_a_structured_auth_value(
+    server: Callable[..., ScriptedServer],
+) -> None:
+    def script(connection: socket.socket) -> None:
+        connection.sendall(text_frame(json.dumps({"auth": ["918273645"]})))
+        connection.sendall(text_frame(json.dumps(signal_data("ws-list"))))
+        connection.recv(64)
+
+    instance = server(script)
+    provider = WebSocketSignalProvider(instance.url, "918273645", timeout=5)
+    provider.start()
+    try:
+        with pytest.raises(SignalSourceError, match="failed authentication"):
+            provider.receive()
+    finally:
+        provider.stop()
+
+
+def test_the_configured_token_string_still_authenticates(
+    server: Callable[..., ScriptedServer],
+) -> None:
+    """The stricter check must not refuse the ordinary case."""
+    instance = server()
+    provider = WebSocketSignalProvider(instance.url, TOKEN, timeout=5)
+    provider.start()
+    try:
+        assert provider.receive().signal_id == "ws-1"
+    finally:
+        provider.stop()
+
+
+# -- a closed session is a domain condition, not a stray builtin ---------
+
+
+def test_a_close_frame_ends_the_session_rather_than_stalling(
+    server: Callable[..., ScriptedServer]
+) -> None:
+    """After a CLOSE the socket is released, so the next call is not a stall.
+
+    Leaving the socket open turned the following `receive()` into a bare socket
+    timeout, which reads like a slow endpoint rather than a session the server
+    has already ended.
+    """
+    instance = server(_script_of(close=True))
+    provider = WebSocketSignalProvider(instance.url, TOKEN)
+    provider.start()
+    try:
+        with pytest.raises(NoSignalAvailable, match="closed the session"):
+            provider.receive()
+        assert provider._socket is None
+    finally:
+        provider.stop()
+
+
+def test_a_silent_endpoint_raises_no_signal_available_not_a_timeout(
+    server: Callable[..., ScriptedServer],
+) -> None:
+    """A caller catching this module's errors must not see a builtin escape.
+
+    A quiet endpoint is a domain condition, and `NoSignalAvailable` is the right
+    reading of it: nothing arrived, and no trade is implied.
+    """
+
+    def silent(connection: socket.socket) -> None:
+        connection.sendall(text_frame(json.dumps({"auth": TOKEN})))
+        time.sleep(5)
+
+    instance = server(silent)
+    provider = WebSocketSignalProvider(instance.url, TOKEN, timeout=1.0)
+    provider.start()
+    try:
+        with pytest.raises(NoSignalAvailable, match="did not answer"):
+            provider.receive()
+    finally:
+        provider.stop()
 
 
 @pytest.mark.parametrize(

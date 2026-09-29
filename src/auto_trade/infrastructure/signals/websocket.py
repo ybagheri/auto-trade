@@ -98,6 +98,19 @@ class WebSocketSignalProvider:
     def receive(self) -> TradeSignal:
         if not self._started:
             raise NoSignalAvailable("signal provider is not started")
+        try:
+            return self._receive()
+        except TimeoutError as exc:
+            # A silent endpoint is a domain condition, not a stray builtin. A
+            # caller that catches this module's errors, and only those, would
+            # otherwise see a timeout escape as an unexpected crash.
+            # `NoSignalAvailable` is the right reading: nothing arrived, and no
+            # trade is implied.
+            raise NoSignalAvailable(
+                f"signal endpoint did not answer within {self.timeout:g}s"
+            ) from exc
+
+    def _receive(self) -> TradeSignal:
         if self._socket is None:
             self._connect()
         if not self._authenticated:
@@ -129,6 +142,13 @@ class WebSocketSignalProvider:
             raise SignalSourceError("signal endpoint port is out of range")
 
     def _connect(self) -> None:
+        # Revalidated here, not only in `start()`. `url` is a public attribute, and
+        # a check that runs once is a check that can be made stale: anything that
+        # rewrites it between `start()` and the first `receive()` would otherwise
+        # be connected to without ever being checked. Validating at the point of
+        # connection makes "stays on loopback" a property of the socket that is
+        # about to be opened rather than a claim about a moment in the past.
+        self._validate_url()
         parts = urlsplit(self.url)
         host = parts.hostname or ""
         port = parts.port or 80
@@ -195,9 +215,13 @@ class WebSocketSignalProvider:
             frame: Any = json.loads(message)
         except json.JSONDecodeError as exc:
             raise SignalSourceError("signal endpoint did not send an authentication frame") from exc
-        if not isinstance(frame, dict) or not constant_time_equals(
-            str(frame.get("auth", "")), self._token
-        ):
+        # The value has to *be* the token string, not merely compare equal to it
+        # after coercion. A JSON number renders to the same text, so with a
+        # numeric token a peer could authenticate with `918273645` having never
+        # sent the configured secret at all. The token is the value the operator
+        # configured, and only that exact value should open the session.
+        supplied = frame.get("auth") if isinstance(frame, dict) else None
+        if not isinstance(supplied, str) or not constant_time_equals(supplied, self._token):
             raise SignalSourceError("signal endpoint failed authentication")
         self._authenticated = True
 
@@ -208,6 +232,12 @@ class WebSocketSignalProvider:
         for _ in range(MAX_FRAGMENTS):
             frame = self._read_frame()
             if frame["opcode"] == OPCODE_CLOSE:
+                # The peer is finished, so the session is finished: the socket is
+                # released here rather than left open, because the next
+                # `receive()` would otherwise read from a session the server has
+                # already ended and surface a bare socket timeout, which reads
+                # like a stall rather than the end of the stream that it is.
+                self.stop()
                 raise NoSignalAvailable("signal endpoint closed the session")
             if frame["opcode"] == OPCODE_PING:
                 self._send(OPCODE_PONG, frame["payload"])

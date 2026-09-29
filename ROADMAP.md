@@ -190,5 +190,13 @@ compiled. See [packaging](docs/PACKAGING.md).
       `ARCHITECTURE_ASSESSMENT.md`, `CONFIGURATION.md`, `COMPLIANCE.md`,
       `TESTING.md`, `VERIFICATION.md`, `STATUS.md`, `PACKAGING.md`,
       `MT5_INTEGRATION.md`, and `MT5_DEMO_VALIDATION.md`.
-- [ ] Independent review of the hand-written WebSocket client, or replace it with a
+- [x] Independent review of the hand-written WebSocket client, or replace it with a
       reviewed dependency once the project accepts a runtime dependency.
+  - Reviewed on 2026-09-29, and kept: a dependency would be a larger change than
+      the three defects it turned out to be hiding. Three findings, all fixed with
+      regression tests that fail against the previous code: a JSON number could
+      authenticate by rendering to the token's text, the loopback check ran only in
+      `start()` and not when the socket was opened, and a closed session left the
+      socket open and surfaced a bare `TimeoutError`. The framing rules, the size
+      limits, and the handshake were re-confirmed rather than taken on trust. See
+      [security review](docs/SECURITY_REVIEW.md).

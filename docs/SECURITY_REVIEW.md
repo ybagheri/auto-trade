@@ -8,9 +8,10 @@ The scope is the code as it stood, not the documentation of it: 85 source files,
 the five signal sources, the two network surfaces, the Windows automation layer,
 configuration, the durable ledger, and the diagnostics bundle.
 
-**Two findings were exploitable and both are fixed.** They are described with the
-evidence that demonstrated them, because a finding that cannot be reproduced is a
-suspicion.
+**Two findings were exploitable and both are fixed, and a later separate review of
+the hand-written WebSocket client found three more, all fixed.** They are described
+with the evidence that demonstrated them, because a finding that cannot be
+reproduced is a suspicion.
 
 ## Summary
 
@@ -23,6 +24,9 @@ suspicion.
 | 5 | local API | No audit record for a control action refused before it acted | low | fixed, with a test |
 | 6 | strategy seam | Loading a strategy executes third-party code by design | low | accepted, by design |
 | 7 | signal sources | No filesystem permission check on the signal and log directories | low | accepted, documented below |
+| 8 | WebSocket auth | A JSON number authenticated by rendering to the token's text | **medium** | fixed, with tests |
+| 9 | WebSocket scope | The loopback check ran once in `start()` and not at connect | **medium** | fixed, with tests |
+| 10 | WebSocket lifecycle | A closed session left the socket open, surfacing a bare `TimeoutError` | low | fixed, with tests |
 
 ## Finding 1 — a signal id was an arbitrary file write (high)
 
@@ -159,6 +163,89 @@ same user can read them and can drop a file into the signal directory. That
 process can already do far more, and the risk engine treats a dropped signal as
 untrusted input. Tightening this would mean inventing an ACL scheme; the honest
 statement is what it is.
+
+## The second review: the hand-written WebSocket client
+
+The client in `infrastructure/signals/websocket.py` is the only substantial piece
+of this project with no dependency behind it — a hand-written RFC 6455
+implementation, written because the project installs no runtime packages. It was
+reviewed separately on 2026-09-29, once it had been the largest unreviewed file
+in the tree. Three findings, all fixed, all demonstrated rather than reasoned
+about.
+
+| # | Area | Finding | Severity | Status |
+| --- | --- | --- | --- | --- |
+| 8 | WebSocket auth | A JSON number authenticated by rendering to the token's text | **medium** | fixed, with tests |
+| 9 | WebSocket scope | The loopback check ran once in `start()` and not at connect | **medium** | fixed, with tests |
+| 10 | WebSocket lifecycle | A closed session left the socket open, surfacing a bare `TimeoutError` | low | fixed, with tests |
+
+### Finding 8 — a peer could authenticate without the token (medium)
+
+`WebSocketSignalProvider._authenticate` compared the peer's value with
+`str(frame.get("auth", ""))`. Coercing to `str` means a JSON *number* renders to
+the same text as the configured string, so with a numeric token a peer that
+sends `{"auth": 918273645}` opens the session having never sent the configured
+secret. Demonstrated against a live server:
+
+```text
+string token   -> AUTH PASSED
+NUMBER token   -> AUTH PASSED      # sent {"auth": 918273645}, not the string
+```
+
+The check now requires the value to *be* a `str` and to match. The token is the
+value the operator configured, and only that exact value opens the session.
+
+### Finding 9 — the loopback guarantee was a claim about the past (medium)
+
+`_validate_url()` was called only from `start()`, while `_connect()` read
+`self.url` again and connected. `url` is a public attribute, so anything that
+rewrote it between `start()` and the first `receive()` would be connected to
+without ever being checked. Demonstrated:
+
+```text
+request line the client actually sent: ['GET /evil-path HTTP/1.1']
+```
+
+The host stayed loopback in that demonstration because that is all that was
+reachable here; the point is that the *path and port* were chosen after the only
+check that ever ran. `_connect()` now validates before opening the socket, which
+makes "stays on loopback" a property of the connection rather than a statement
+about an earlier moment. It also runs on every reconnect.
+
+### Finding 10 — a closed session looked like a stall (low)
+
+A `CLOSE` frame raised `NoSignalAvailable` but left the socket open, so the next
+`receive()` read from a session the server had already ended and raised a bare
+`TimeoutError`. Both call sites happened to catch that, so nothing was
+exploitable, but a builtin escaping a module that defines its own error hierarchy
+is a trap for the next caller. The socket is now released on `CLOSE`, and a
+silent endpoint raises `NoSignalAvailable` rather than a timeout.
+
+### What was examined and found sound in the client
+
+The review spent most of its time confirming things that were already right, and
+they are the reason the two findings above are medium rather than high:
+
+- **The framing rules are enforced as claimed.** A masked frame from the server, a
+  reserved bit, a fragmented or oversized control frame, a continuation with no
+  start, a new message before finishing one, and a binary frame are each refused.
+  Every one of the module's docstring claims was checked against the code and each
+  holds.
+- **Size limits are applied before allocation.** A declared length is compared to
+  `max_bytes` before the payload is read, so a frame claiming `2^64` bytes raises
+  rather than allocating. The message total is bounded separately, and a flood of
+  13 MB during the handshake is refused at roughly 185 KiB held.
+- **A mid-message error refuses rather than resynchronising.** Truncated fragments
+  do not leave a buffer that a following frame could complete into a forged
+  signal; the connection is refused instead.
+- **The handshake is verified properly.** The `Sec-WebSocket-Accept` key is
+  derived from the client's own random nonce, `Upgrade` and `Connection` are both
+  checked, and no redirect is ever followed, so a bearer token cannot be resent
+  off loopback. The test suite drives an independently written server rather than
+  the client's own helpers.
+- **`stop()` is clean.** It sends a close frame, tolerates a peer that never reads
+  it, releases the socket, and resets the buffer, the authentication flag, and the
+  started flag. Calling it before connecting is safe.
 
 ## What was examined and found sound
 
