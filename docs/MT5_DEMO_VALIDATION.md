@@ -131,6 +131,125 @@ is now carried on the failed path as well as the accepted one, with three
 regression tests. The ledger record for this attempt still predates the fix and
 shows `evidence: null`; that is correct history, not an error to correct by hand.
 
+## The 2026-09-29 evening session — a third build, 5430, and three defects
+
+Worked on a different machine from the two sections above, so nothing here
+transfers from them either. This build presents a **different order dialog**, and
+checking it produced two defects in this project's own code.
+
+| Fact | Value |
+| --- | --- |
+| Terminal | `C:\Program Files\Alpari MT5_4\terminal64.exe`, **build 5430** |
+| Data directory | `C:\Users\BazikadeStore\AppData\Roaming\MetaQuotes\Terminal\1D9617E1A6A4352DBDC25D08FEC12BD2` |
+| Account | `53184454`, server `MT5-Demo.Asia.13`, `Hedge` |
+| Windows | `Windows-11-10.0.26200-SP0`, single monitor, `VirtualScreen 1536x864` |
+| Python | 3.12.9 — the executable builds and runs on the target interpreter |
+| Order dialog title | **`Order`**, not the `Order: EURUSD` of builds 6184 and 6230 |
+| Order dialog shape | one-click: `Buy by Market` (10408) and `Sell by Market` (10409), no OK button |
+| Execution mode | **absent** — this build's dialog has no `Market Execution` control at all |
+| Order fields | `10325` symbol, `10333` volume, `10334` stop loss, `10336` take profit — all as measured on 6184 |
+| Trade grid | `10328`, unchanged |
+| Indicator | compiled with `MetaEditor64 /compile`, `0 errors, 0 warnings`, `.ex5` written |
+| Account state throughout | `0 positions, 0 orders` for the read-only checks; one position opened by hand afterwards, for row 30 |
+
+**The build number was first recorded wrongly, which is itself worth recording.**
+This session initially read the build as `6090` from a line in the terminal
+journal and wrote that down. The indicator's own `terminal_build` field, the
+executable's version resource (`5.0.0.5430`), and `terminal-check` all say
+**5430**. The journal line was the outlier and the mistake was not caught at the
+time, because the journal was read once and never cross-checked. It is recorded
+here rather than quietly corrected, since a build number is exactly the value this
+file exists to keep trustworthy.
+
+### Defect 1 — a collapsed Trade tab was reported as a build change
+
+`terminal-check` reported `trade_grid: DRIFTED`, naming `10128` and `10144`. Both
+belong to other panels (Mailbox and Market Watch). The real cause was that the
+Toolbox was collapsed, so the grid was not on the accessibility tree at all while
+its neighbours were. Opening the Trade tab showed `10328` present and correct.
+
+The probe reported a break that had not happened, which is worse than silence: an
+operator would have re-measured a sound build. It is now `NOT_PROBED` whenever a
+Trade tab is positively identified and not selected, and still `DRIFTED` when that
+tab *is* selected and the grid is genuinely absent. A tab strip that cannot be read
+stays `DRIFTED`, because an unknown UI state is not evidence that nothing is wrong.
+
+### Defect 2 — the probe left an order dialog open on the terminal
+
+`open_order_dialog` only records the dialog once it recognises it, and it matched
+on the title `Order:`. On build 5430 it therefore raised *after* MT5 had already put
+a dialog on screen, and the cleanup path trusted only the recorded handle. The
+probe returned with a live one-click order dialog sitting over the terminal, where
+a single click is a market order — on the one build where that is most true.
+
+The dialog is now matched by the prefix `Order`, and the cleanup runs on every
+path, including the one where recognition failed. Both were verified against this
+terminal: the report is unchanged, and no dialog is left behind.
+
+### What is still refused, and why that is correct
+
+- `market_execution_button` is `MISSING` and stays that way. This build's dialog
+  has no execution-mode *button*. `select_market_execution` raises, and the order
+  path refuses. Substituting a different control would be exactly the guessing
+  this project forbids.
+
+  What the build does have is the `Type` combo (`10338`), which already reads
+  **`Market Execution`** when the dialog opens. That is a plausible equivalent and
+  it is deliberately **not** wired up: a control that has been found once is not a
+  control whose behaviour has been established, and on this build the guarded
+  order path has never reached a final control. Deciding that a default is
+  sufficient is a judgement about trading, not a lookup.
+- The terminal also restarted during this session, so the process id moved from
+  10808 to 14004 while the data directory stayed the same. Discovery followed it
+  correctly, which is the behaviour the process-id pinning exists for.
+
+### Defect 3 — a control that was never found was recorded as an unknown outcome
+
+The indicator was attached and a EURUSD SELL opened by hand, and the first
+real-terminal dry-run on this build produced the interesting result of the whole
+session. It refused at `select_market_execution` — correctly — and was recorded as:
+
+    status UNKNOWN / UNKNOWN_EXECUTION, "Market Execution control was not found"
+
+**Nothing had been clicked.** The run stopped while preparing the dialog. But
+`UNKNOWN` is this project's word for "a final control was used and the outcome
+could not be proven", and it is what tells an operator to go and check their
+account. Recording a pre-click refusal that way invents an incident: the first
+record written on this build sent an operator looking for a trade that had never
+been placed.
+
+The cause was in the exception handler, which lumped `PREPARING_UI` in with
+`EXECUTING` when deciding on `UNKNOWN`. A failure in `PREPARING_UI` is now
+`REJECTED` / `ORDER_REJECTED`, and it is still audited with its reason, so nothing
+is lost. Failures at or after `EXECUTING` remain `UNKNOWN`, which is the case that
+earns the word. Three tests cover both directions.
+
+| # | Date | Terminal | Account | Item | Expected | Actual | Verification method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 23 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | paths resolve and the process is found | exactly one match, titled demo | `terminal_discovery: found`, pid 10808 of four running terminals | `diagnostics` | PASS |
+| 24 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | indicator compiles and installs | `0 errors, 0 warnings`, `.ex5` written | exactly that | `scripts/install-position-reader.ps1` with the log | PASS |
+| 25 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | order dialog is found and read | the dialog opens and exposes its controls | found once the title is matched by prefix; all four order fields and both final controls `OK` with the values measured on 6184 | `terminal-check`, read-only | PASS, DEFECT FOUND AND FIXED |
+| 26 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | trade grid identifier | `10328` when the Trade tab is showing | `10328`, unchanged | `terminal-check`, read-only | PASS, DEFECT FOUND AND FIXED |
+| 27 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | execution mode control | present | **absent as a button**; the `Type` combo (`10338`) reads `Market Execution` but is not substituted. The order path refuses | `terminal-check`, read-only | CORRECTLY REFUSED |
+| 28 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | no dialog is left open by a probe | the terminal is as it was found | no `#32770` or `#32768` dialog remains after `terminal-check` or after a failed `dry-run` | live check with `pywinauto` after each command | PASS, DEFECT FOUND AND FIXED |
+| 29 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | executable builds and runs on Python 3.12 | the build completes and both smoke tests pass | built with `scripts/build-exe.ps1`; `diagnostics` and `diagnostics-bundle` both pass; `status` reports `dry_run` and `demo_only` | `dist\auto-trade\auto-trade.exe` | PASS, DEFECT FOUND AND FIXED |
+| 30 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | the indicator is attached and the snapshot is live | `AVAILABLE`, `complete: true`, build reported | `AVAILABLE`, sequence advancing, `terminal_build 5430`, and the hand-opened EURUSD SELL `0.01` ticket `383284296` is visible in it | `position-snapshot` | PASS |
+| 31 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | the close path refuses a position this application did not open | refused before any UI work | exit code 2, `ticket 383284296 is not in the execution ledger, so it is not a position this application opened; close it by hand`. No `position-close` audit event exists, so it refused before touching the UI, and the position is still open | `close-position 383284296 --confirm-demo`; `position-snapshot` afterwards | PASS |
+| 32 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | real-terminal dry-run refuses before any final control | `REJECTED`, no control clicked, no trade | `REJECTED` / `ORDER_REJECTED`, `Market Execution control was not found`; the journal records no trade and the snapshot still shows exactly one position | `dry-run` on the live terminal; `position-snapshot`; the terminal journal | CORRECTLY REFUSED, DEFECT FOUND AND FIXED |
+| 33 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | discovery survives a terminal restart | the new process is found, not a fallback | the terminal restarted mid-session; discovery resolved pid 14004 for the same data directory and `terminal-check` reported `terminal_identity OK` | `diagnostics`, `terminal-check` | PASS |
+| 34 | 2026-09-29 | Alpari MT5_4 5430 | 53184454 | a guarded order and a guarded close on this build | `ACCEPTED` then `CLOSED`, each proved by observation | **not run, and not runnable**: the execution-mode control this code requires does not exist on this build, so the order path refuses before any final control. Row 30 shows the observation path is live; it does not show an order can be placed | not run | NOT RUN |
+
+Row 34 is the one thing this build cannot demonstrate, and it is not a defect in
+this project: build 5430 presents a dialog without the control that the guarded
+order path needs. Whether to treat the `Type` combo's `Market Execution` default
+as sufficient is a decision about how this build should be traded, and it is not
+one this project may make on its own. Until somebody makes it, row 34 stays
+`NOT RUN` and this build cannot trade through the guarded path at all.
+
+The account was left exactly as found: one hand-opened EURUSD SELL `0.01`
+(`383284296`), no orders, and no `UNKNOWN` record other than the one written by
+the pre-fix run, which is correct history and is left in place.
+
 ### The rows that remain
 
 **Both controls that change an account are now measured on build 6230.** Row 22
@@ -148,6 +267,15 @@ guarded close.
 fresh and the order then proceeding, which is the recovery half of row 19. And
 the operator has one `UNKNOWN` record left to settle, which is a judgement about
 what they saw rather than anything the code can measure.
+
+**And, on build 5430, the guarded order and close paths are unproven.** Row 25
+shows the identifiers are right, but the execution-mode button that build presents
+does not exist, so the order path refuses before reaching a final control — as row
+32 confirms, by refusing on the real terminal. A build whose dialog has no
+execution-mode button is a build this code cannot trade on at all, and that is a
+decision for the operator rather than something a substituted identifier can
+settle. Row 34 is the open item, and the `Type` combo that already reads
+`Market Execution` is the thing somebody has to make that decision about.
 
 
 ## Clicks that left no record in this application

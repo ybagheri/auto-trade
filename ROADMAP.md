@@ -152,6 +152,20 @@ compiled. See [packaging](docs/PACKAGING.md).
       load. Three lower-severity items were reviewed and deliberately accepted with
       the reasoning recorded. See [security review](docs/SECURITY_REVIEW.md).
 - [ ] Reliability testing across DPI, monitors, focus loss, and dialogs.
+  - Measured 2026-09-29 on build 5430: single monitor, `VirtualScreen 1536x864`, no
+      DPI scaling fault. DPI was never the obstacle here; what actually needed
+      measuring was which controls the build presents. See
+      [MT5 demo validation](docs/MT5_DEMO_VALIDATION.md).
+- [ ] Decide how build 5430's order dialog is to be traded, or stop supporting it.
+  - Build 5430 has no execution-mode *button*. Its `Type` combo (`10338`) already
+      reads `Market Execution` when the dialog opens, so the guarded order path
+      refuses at `select_market_execution` and this build cannot be traded through
+      the guarded path at all.
+  - This project will not substitute the combo on its own: a control found once is
+      not a control whose behaviour has been established, and treating a default
+      as a guarantee is a decision about trading. It needs an operator's decision
+      and, if made, a measured identifier and a real-terminal row.
+  - Builds 6184 and 6230 both present the button and are unaffected.
 - [x] Complete bilingual documentation synchronization.
   - The pages that describe a refusal, a recovery, or an observation now have a
       Persian translation under `docs/fa/`, each linking to the other, and both
