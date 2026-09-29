@@ -116,7 +116,16 @@ def run_check(config: AppConfig) -> dict[str, Any]:
             )
         )
     finally:
-        if dialog_opened:
+        # Tidy up unconditionally, not only when the dialog was recognised. A
+        # build whose dialog is titled differently raises *after* MT5 has put it
+        # on screen, and on such a build a single click on it is a market order.
+        # Leaving a dialog over somebody's trading terminal is not an acceptable
+        # outcome of a command that is only meant to read one.
+        try:
+            closed = adapter.window_manager.close_any_order_dialog()
+        except AutoTradeError:
+            closed = False
+        if dialog_opened and not closed:
             try:
                 adapter.window_manager.close_order_dialog(timeout_seconds=2.0)
             except AutoTradeError:

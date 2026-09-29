@@ -47,6 +47,12 @@ MENU_OPEN_SECONDS = 5.0
 MENU_SETTLE_SECONDS = 3.0
 POPUP_MENU_CLASS = "#32768"
 
+# Matched by prefix, not by equality. Builds differ here: the dialog measured on
+# 6184 and 6230 is titled `Order: EURUSD`, while build 6090 titles the same
+# dialog plain `Order`. A prefix accepts both without this project having to
+# assert that a build's title has not changed again.
+ORDER_DIALOG_TITLE = "Order"
+
 _ELEMENT_GONE: tuple[type[BaseException], ...] | None = None
 
 
@@ -261,7 +267,7 @@ class MT5WindowManager:
                 control
                 for control in self._window.descendants()
                 if control.element_info.control_type == "Window"
-                and control.window_text().startswith("Order:")
+                and control.window_text().startswith(ORDER_DIALOG_TITLE)
             ]
             if dialogs:
                 self._order_dialog = dialogs[0]
@@ -357,17 +363,67 @@ class MT5WindowManager:
                 return control
         raise AutomationError(f"order field {automation_id} was not found")
 
+    def close_any_order_dialog(self, timeout_seconds: float = 2.0) -> bool:
+        """Close an order dialog this manager did not successfully open.
+
+        ``open_order_dialog`` only records a dialog once it recognises it, so a
+        build whose dialog is titled differently raises *after* MT5 has already
+        put one on screen. A caller that trusts only the recorded handle then
+        leaves that dialog open over a live terminal, where on this build a
+        single click is a market order. Finding the dialog again and closing it
+        with its own Close control is the only way to guarantee tidying up on
+        every path, including the path where recognition failed.
+        """
+        for control in self._guarded_descendants(self._window):
+            if control.element_info.control_type != "Window":
+                continue
+            if not str(control.window_text() or "").startswith(ORDER_DIALOG_TITLE):
+                continue
+            close_buttons = [
+                candidate
+                for candidate in self._guarded_descendants(control)
+                if candidate.element_info.control_type == "Button"
+                and candidate.window_text() == "Close"
+            ]
+            if not close_buttons:
+                return False
+            close_buttons[-1].click_input()
+            deadline = time.monotonic() + timeout_seconds
+            while time.monotonic() < deadline:
+                if not self._order_dialog_is_present():
+                    self._order_dialog = None
+                    return True
+                time.sleep(0.1)
+            return False
+        return False
+
+    def _order_dialog_is_present(self) -> bool:
+        return any(
+            control.element_info.control_type == "Window"
+            and str(control.window_text() or "").startswith(ORDER_DIALOG_TITLE)
+            for control in self._guarded_descendants(self._window)
+        )
+
+    @staticmethod
+    def _guarded_descendants(element: Any) -> list[Any]:
+        """Read an element's children, treating a destroyed one as no children.
+
+        Used on the tidying-up paths, where raising would leave the terminal
+        exactly as it was found, which is the one outcome they exist to prevent.
+        """
+        if element is None:
+            return []
+        try:
+            return list(element.descendants())
+        except _element_gone():
+            return []
+        except AutomationError:
+            return []
+
     def _is_order_dialog_open(self) -> bool:
         if self._window is None:
             return False
-        try:
-            return any(
-                control.element_info.control_type == "Window"
-                and control.window_text().startswith("Order:")
-                for control in self._window.descendants()
-            )
-        except _element_gone():
-            return False
+        return self._order_dialog_is_present()
 
     # -- the trade grid, for closing a position ---------------------------
 

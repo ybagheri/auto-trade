@@ -64,6 +64,12 @@ BUTTON = "Button"
 EDIT = "Edit"
 LIST = "List"
 WINDOW = "Window"
+TAB_ITEM = "TabItem"
+
+# The Toolbox tab whose content is the Trade grid. Named, not identified by an
+# automation id, because the tab strip's id is the same for every tab and a
+# missing grid is explained by which tab is showing.
+TRADE_TAB_NAME = "Trade"
 
 OK = "OK"
 DRIFTED = "DRIFTED"
@@ -127,7 +133,17 @@ def probe_trade_grid(window: Any) -> list[ControlReport]:
     """Report the Trade grid, which only exists when the Trade tab is open.
 
     The close path needs the grid's automation id, and the grid is not in the
-    order dialog, so this is a separate probe. It is a read.
+    order dialog, so this is a separate probe. This is a read.
+
+    A collapsed Toolbox takes its grid off the accessibility tree, but the other
+    panels keep theirs, so a terminal with the Trade tab closed still reports
+    several list controls. Counting those as evidence of drift is a false
+    positive with a real cost: an operator would go looking for a build change
+    that did not happen, having been told the close path is broken. The absent
+    grid is therefore reported as *not probed* whenever a Trade tab is visible
+    and not the selected one, which is the state that explains it. Drift is
+    still reported when the Trade tab is selected and the grid is genuinely
+    absent, because that is the case that means the build changed.
     """
     lists = [control for control in _descendants(window) if _kind(control) == LIST]
     matching = [control for control in lists if _identifier(control) == TRADE_LIST_ID]
@@ -139,6 +155,17 @@ def probe_trade_grid(window: Any) -> list[ControlReport]:
                 TRADE_LIST_ID,
                 "",
                 "no list control is present; the Trade tab is probably not open",
+            )
+        ]
+    if not matching and _trade_tab_is_open(window) is False:
+        return [
+            ControlReport(
+                "trade_grid",
+                NOT_PROBED,
+                TRADE_LIST_ID,
+                "",
+                "the Trade tab is not the selected tab, so the grid is not on screen; "
+                "the other lists belong to other panels and say nothing about this id",
             )
         ]
     if not matching:
@@ -162,6 +189,26 @@ def probe_trade_grid(window: Any) -> list[ControlReport]:
             )
         ]
     return [ControlReport("trade_grid", OK, TRADE_LIST_ID, TRADE_LIST_ID)]
+
+
+def _trade_tab_is_open(window: Any) -> bool | None:
+    """Whether the Trade tab is the one currently showing, or ``None`` if unknown.
+
+    The three states are kept apart on purpose. Only a positively identified
+    Trade tab that is *not* selected explains a missing grid, and only a
+    positively identified Trade tab that *is* selected turns that missing grid
+    into a build change. A tab strip that cannot be read is neither: it returns
+    ``None`` so the caller keeps reporting drift, because an unknown UI state is
+    not evidence that nothing is wrong with the build.
+    """
+    for control in _descendants(window):
+        if _kind(control) != TAB_ITEM or _name(control) != TRADE_TAB_NAME:
+            continue
+        try:
+            return bool(control.iface_selection_item.CurrentIsSelected)
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 
 def probe_build(build: int | None) -> list[ControlReport]:

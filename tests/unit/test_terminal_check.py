@@ -20,6 +20,7 @@ from auto_trade.domain.exceptions import AutomationError
 from auto_trade.domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
 from auto_trade.infrastructure.automation.closing import CLOSE_MENU_ITEM_ID
 from auto_trade.infrastructure.automation.control_probe import (
+    NOT_PROBED,
     ControlReport,
     probe_build,
     probe_main_window,
@@ -224,6 +225,77 @@ def test_an_absent_trade_grid_is_not_probed_rather_than_passed() -> None:
 def test_two_trade_grids_are_ambiguous() -> None:
     window = FakeElement([FakeControl("List", "", "10328"), FakeControl("List", "", "10328")])
     assert report_for(probe_trade_grid(window), "trade_grid").status == "AMBIGUOUS"
+
+
+# -- a collapsed Trade tab is not a build that changed --------------------
+
+
+class FakeSelection:
+    def __init__(self, selected: bool) -> None:
+        self.CurrentIsSelected = selected
+
+
+class FakeTab(FakeControl):
+    """A tab item, which reports whether it is the selected one."""
+
+    def __init__(self, name: str, selected: bool) -> None:
+        super().__init__("TabItem", name, "")
+        self.iface_selection_item = FakeSelection(selected)
+
+
+def test_a_collapsed_trade_tab_is_not_probed_rather_than_drifted() -> None:
+    """Other panels keep their lists when the Trade tab is closed.
+
+    Reporting drift here sends an operator to re-measure a build that did not
+    change, having been told the close path is broken.
+    """
+    window = FakeElement(
+        [
+            FakeControl("List", "", "10144"),
+            FakeControl("List", "", "10128"),
+            FakeTab("Trade", selected=False),
+            FakeTab("Journal", selected=True),
+        ]
+    )
+
+    entry = report_for(probe_trade_grid(window), "trade_grid")
+
+    assert entry.status == NOT_PROBED
+    assert "10144" not in entry.found
+
+
+def test_a_missing_grid_with_the_trade_tab_open_is_drifted() -> None:
+    """With the Trade tab showing, an absent grid really does mean the build moved."""
+    window = FakeElement(
+        [FakeControl("List", "", "10144"), FakeTab("Trade", selected=True)]
+    )
+
+    assert report_for(probe_trade_grid(window), "trade_grid").status == "DRIFTED"
+
+
+def test_an_unreadable_tab_strip_does_not_soften_drift() -> None:
+    """A terminal whose selection state cannot be read is an unknown, not a pass.
+
+    Defaulting the other way would let a real build change be reported as
+    merely unprobed, which is the failure this whole project is built to avoid.
+    """
+
+    class ExplodingTab(FakeControl):
+        @property
+        def iface_selection_item(self) -> Any:
+            raise RuntimeError("element gone")
+
+    window = FakeElement(
+        [FakeControl("List", "", "10144"), ExplodingTab("TabItem", "Trade", "")]
+    )
+
+    assert report_for(probe_trade_grid(window), "trade_grid").status == "DRIFTED"
+
+
+def test_a_trade_grid_is_still_ok_when_the_tab_is_open() -> None:
+    window = FakeElement([FakeControl("List", "", "10328"), FakeTab("Trade", selected=True)])
+
+    assert report_for(probe_trade_grid(window), "trade_grid").status == "OK"
 
 
 def test_the_close_control_is_reported_against_its_measured_id() -> None:
