@@ -10,7 +10,7 @@ Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 For what the 2026-09-29 session changed and what it left open, see
 [the session summary](SESSION_2026-09-29.md).
 
-**State as of 2026-09-29.** `main` is green: 513 tests, `ruff` clean, `mypy
+**State as of 2026-09-29.** `main` is green: 578 tests, `ruff` clean, `mypy
 --strict` clean. Every claim below was either executed on this machine or is
 labelled as not run.
 
@@ -76,6 +76,7 @@ money.
 | `Close by`, `Close 50%`, `Close All`, `Modify or Delete` | neighbours of the one menu entry this code uses; each would need its own identifiers and its own verification |
 | `wss://` and any non-loopback signal endpoint | TLS is not implemented here, and a network source is not approximated |
 | A local API read without a token, or a token in a query string | a status feed a program calls on a schedule must not be readable or spoofable by anything else on the machine, and a URL is written to proxy logs |
+| An unattended loop placing orders | `run` is a dry-run loop by construction: the same workflow builder as `dry-run`, the gate explicitly disabled, and it stops on an `UNKNOWN` outcome rather than retrying. The final control stays in `execute --confirm-demo`, per signal |
 | Two configured signal sources at once | an operator who set two has not decided which is authoritative |
 | A snapshot that is missing, stale, incomplete, or unreadable | reported as unavailable; never as an empty account |
 | Hedge, partial close, modify | not implemented; see ROADMAP |
@@ -112,6 +113,15 @@ infrastructure.
   `Alpari-MT5-Demo`. Discovery distinguishes them by executable path and data
   directory, not by the title.
 - `logs/`, `signals/` and `dist/` are ignored runtime artifacts.
+- Git is installed per user at `%LOCALAPPDATA%\Programs\Git`, not on `PATH`. The
+  bundled `ssh` also misreads this shell's `HOME`, which is set to a POSIX path,
+  so it finds no `known_hosts` and every push fails with `Host key verification
+  failed` even though the GitHub keys are present and correct. Pushing works
+  with `HOME=C:\Users\bagheri` and
+  `GIT_SSH_COMMAND=C:/Windows/System32/OpenSSH/ssh.exe`, which uses the Windows
+  OpenSSH and reads the existing key and `known_hosts`. The host key already in
+  `known_hosts` was confirmed to match what GitHub presents, so no new trust was
+  needed.
 
 ## Open work, and what blocks each item
 
@@ -159,10 +169,14 @@ python -m auto_trade execute --confirm-demo <signal-file>
 python -m auto_trade close-position <ticket> --confirm-demo
 python -m auto_trade diagnostics-bundle
 python -m auto_trade api
+python -m auto_trade run --mock --max-signals 1
 ```
 
 `api` needs a token, from `AUTO_TRADE_API_TOKEN` or `--token`; without one it
-exits rather than serving an endpoint nobody can authenticate to.
+exits rather than serving an endpoint nobody can authenticate to. `run` is a
+**dry-run loop**: it walks pending signals through the whole workflow and stops
+at `DRY_RUN_COMPLETED`, and it cannot place an order by construction. See
+[execution](EXECUTION.md).
 
 ## Reading order for a new reader
 

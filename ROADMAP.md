@@ -100,11 +100,16 @@ record.
 - [x] Provide a read-only MQL5 indicator position observation method.
 - [x] Observe a demo position and confirm verification accepts it.
   - Accepted on 2026-09-28 with evidence on Alpari MT5 6184; the position the
-      guarded path created was observed independently. See
-      [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 5, 6, 6a.
+      guarded path created was observed independently. Re-observed on 2026-09-29
+      on build 6230, where a position opened *and closed* by hand was seen
+      appearing and disappearing. See
+      [demo validation](docs/MT5_DEMO_VALIDATION.md), rows 5, 6, 6a, 9 to 13.
 - [x] Perform actual demo order only after explicit verification criteria pass.
   - The first attempt found three defects after the click, all fixed; the second
-      returned `ACCEPTED` with `order_reference` and evidence.
+      returned `ACCEPTED` with `order_reference` and evidence. On build 6230 a
+      later attempt was rejected by the broker and correctly reported `UNKNOWN`,
+      and a following attempt returned `ACCEPTED`; then `close-position` on the
+      same ticket returned `CLOSED`.
 - [x] Reconcile an execution record an operator later proved, without editing the
       ledger by hand. See [recovery](docs/RECOVERY.md); the `UNKNOWN` record from
       the first order attempt was settled with it.

@@ -4,6 +4,7 @@ import argparse
 import json
 import platform
 import sys
+import time
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -15,10 +16,12 @@ from ..application.risk import RiskEngine
 from ..application.workflow import ExecutionWorkflow
 from ..domain.exceptions import AutoTradeError, NoSignalAvailable, SignalSourceError
 from ..domain.models import AuditEvent, PositionSnapshot, TradeSignal, utc_now
+from ..domain.protocols import SignalProvider
 from ..infrastructure.automation import MT5DesktopAdapter
 from ..infrastructure.configuration import AppConfig
 from ..infrastructure.logging import AuditLogger
 from ..infrastructure.net import safe_url_summary
+from ..infrastructure.signals import FileSignalProvider
 from ..infrastructure.terminal import WindowsTerminalDiscovery
 
 
@@ -148,7 +151,40 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required acknowledgement that this closes a real demo position",
     )
-    subparsers.add_parser("run", help="run the configured signal loop")
+    run = subparsers.add_parser(
+        "run",
+        help="process pending signals in a loop, as dry runs",
+        description=(
+            "Process pending signals in a loop as dry runs. Every signal goes through the "
+            "whole workflow against the real terminal and stops at DRY_RUN_COMPLETED; no "
+            "final control is used and no account changes. Placing an order stays in "
+            "`execute --confirm-demo`, which a person runs per signal. The loop stops on "
+            "an attempt whose outcome could not be proven."
+        ),
+    )
+    run.add_argument(
+        "--max-signals",
+        type=int,
+        default=1,
+        help="stop after this many signals; 0 means until the timeout",
+    )
+    run.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="give up after this many seconds, whatever the signal count",
+    )
+    run.add_argument(
+        "--interval",
+        type=float,
+        default=0.0,
+        help="seconds to wait between signals",
+    )
+    run.add_argument(
+        "--mock",
+        action="store_true",
+        help="use the fake terminal instead of inspecting MT5",
+    )
     dashboard = subparsers.add_parser(
         "dashboard", help="serve the local read-only status dashboard"
     )
@@ -767,6 +803,164 @@ def _terminal_check(config: AppConfig, args: argparse.Namespace) -> int:
     return 0 if verdict in {"OK", "PARTIAL"} else 1
 
 
+def _dry_run_workflow(config: AppConfig, mock: bool) -> ExecutionWorkflow:
+    """Build a workflow that cannot reach a final control.
+
+    Extracted so `dry-run` and `run` cannot drift apart. The gate is disabled
+    explicitly rather than left to the policy, so the refusal to click is a
+    property of the object and not a consequence of a flag someone set.
+    """
+    from ..application.kill_switch import FileKillSwitch
+    from ..infrastructure.automation.execution import ExecutionGate
+    from ..interfaces import kill_switch_path
+
+    # File backed so an emergency stop raised by the dashboard, another
+    # process, or a previous run still blocks execution after a restart.
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    terminal = (
+        DryRunTerminalAdapter()
+        if mock
+        else MT5DesktopAdapter(
+            config.terminal_profile(),
+            # This path is a dry run, so the final control is unreachable by
+            # construction and the opt-in is deliberately not consulted.
+            gate=ExecutionGate(
+                enabled=False,
+                dry_run=True,
+                demo_only=config.policy.demo_only,
+                kill_switch_active=kill_switch.active,
+            ),
+        )
+    )
+    return ExecutionWorkflow(
+        adapter=terminal,
+        risk_engine=RiskEngine(config.risk),
+        profile=config.terminal_profile(),
+        policy=type(config.policy)(
+            dry_run=True,
+            demo_only=config.policy.demo_only,
+            confirmation=config.policy.confirmation,
+        ),
+        kill_switch=kill_switch,
+        audit=AuditLogger(config.log_directory).record,
+        ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
+    )
+
+
+def _run(config: AppConfig, args: argparse.Namespace) -> int:
+    """Process pending signals in a loop, as dry runs.
+
+    This is a rehearsal, not a trader. Every signal goes through the whole
+    workflow against the real terminal and stops at `DRY_RUN_COMPLETED`, so the
+    loop proves the signal source, the risk engine, the state machine, and the
+    order dialog all work together, on a schedule, without an account changing.
+
+    The tempting version of this command places orders unattended, and that is
+    precisely what this project does not do: the final control stays in
+    `execute --confirm-demo`, which a person runs per signal. A loop that
+    confirmed once and then traded for hours would turn one deliberate act into
+    an unbounded one, and the confirmation would stop meaning what it says.
+
+    Stops on a signal whose outcome is unknown, because retrying an unproven
+    attempt is the one thing this project never does.
+    """
+    from ..application.kill_switch import FileKillSwitch
+    from ..interfaces import kill_switch_path
+
+    provider = _loop_source(config, args)
+    kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
+    processed: list[dict[str, object]] = []
+    deadline = time.monotonic() + max(0.0, args.timeout)
+
+    while True:
+        if kill_switch.active:
+            print("kill switch is active; stopping", file=sys.stderr)
+            return 2
+        if args.max_signals and len(processed) >= args.max_signals:
+            break
+        if time.monotonic() >= deadline:
+            break
+        try:
+            provider.start()
+            signal = provider.receive()
+        except NoSignalAvailable:
+            provider.stop()
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(max(0.1, args.interval))
+            continue
+        except (AutoTradeError, OSError, TimeoutError, ValueError) as exc:
+            provider.stop()
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            provider.stop()
+
+        try:
+            result = _dry_run_workflow(config, args.mock).execute(signal)
+        except (OSError, ValueError, AutoTradeError, TimeoutError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        processed.append(
+            {
+                "signal_id": signal.signal_id,
+                "symbol": signal.symbol,
+                "action": signal.action.value,
+                "volume": str(signal.volume),
+                "status": result.status.value,
+                "state": result.state,
+                "message": result.message,
+            }
+        )
+        print(json.dumps(processed[-1], indent=2))
+        if result.status.value == "UNKNOWN":
+            # An attempt whose outcome could not be proven. The loop stops rather
+            # than asking a person to look at the account and start again.
+            print(
+                "an attempt could not be proven; stopping. Review it with "
+                "`python -m auto_trade recovery`",
+                file=sys.stderr,
+            )
+            return 1
+        time.sleep(max(0.0, args.interval))
+
+    print(
+        json.dumps(
+            {
+                "processed": len(processed),
+                "signals": processed,
+                "note": "every signal was a dry run; no final control was used",
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _loop_source(config: AppConfig, args: argparse.Namespace) -> SignalProvider:
+    """The source the loop reads from: the configured one, or the signal directory.
+
+    A loop needs *some* source even when none is configured, and the local
+    directory is the one that always exists, so a file run works with no network
+    source set up at all.
+    """
+    try:
+        provider = config.signal_source()
+    except SignalSourceError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    if provider is not None:
+        return provider
+    if not args.mock:
+        print(
+            "no signal source is configured; reading the local signal directory. "
+            "See docs/SIGNAL_PROTOCOL.md for the three local sources.",
+            file=sys.stderr,
+        )
+    local = FileSignalProvider(config.signal_directory)
+    return local
+
+
 def _execute_live(config: AppConfig, args: argparse.Namespace) -> int:
     if not args.confirm_demo:
         print("ERROR: --confirm-demo is required", file=sys.stderr)
@@ -942,51 +1136,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "close-position":
         return _close_position(config, args)
     if args.command == "run":
-        print("run is not enabled until a verified MT5 desktop adapter is implemented")
-        return 2
+        return _run(config, args)
     try:
         signal = _signal(args.signal_file)
         if args.command == "test-signal":
             print(json.dumps(signal.to_dict(), indent=2))
             return 0
-        audit = AuditLogger(config.log_directory)
-        policy = type(config.policy)(
-            dry_run=True,
-            demo_only=config.policy.demo_only,
-            confirmation=config.policy.confirmation,
-        )
-        from ..application.kill_switch import FileKillSwitch
-        from ..infrastructure.automation.execution import ExecutionGate
-        from ..interfaces import kill_switch_path
-
-        # File backed so an emergency stop raised by the dashboard, another
-        # process, or a previous run still blocks execution after a restart.
-        kill_switch = FileKillSwitch(kill_switch_path(config.log_directory))
-        terminal = (
-            DryRunTerminalAdapter()
-            if args.mock
-            else MT5DesktopAdapter(
-                config.terminal_profile(),
-                # This path is a dry run, so the final control is unreachable by
-                # construction and the opt-in is deliberately not consulted.
-                gate=ExecutionGate(
-                    enabled=False,
-                    dry_run=True,
-                    demo_only=config.policy.demo_only,
-                    kill_switch_active=kill_switch.active,
-                ),
-            )
-        )
-        workflow = ExecutionWorkflow(
-            adapter=terminal,
-            risk_engine=RiskEngine(config.risk),
-            profile=config.terminal_profile(),
-            policy=policy,
-            kill_switch=kill_switch,
-            audit=audit.record,
-            ledger=JsonExecutionLedger(config.log_directory / "idempotency.json"),
-        )
-        result = workflow.execute(signal)
+        result = _dry_run_workflow(config, args.mock).execute(signal)
         output = {
             "status": result.status.value,
             "state": result.state,

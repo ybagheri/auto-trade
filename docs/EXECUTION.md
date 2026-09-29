@@ -60,6 +60,36 @@ unreadable snapshot, yields `UNKNOWN`.
 That separation is the whole safety argument: a successful click proves nothing
 about the broker, and the code never claims it does.
 
+## What `run` is, and what it is not
+
+`python -m auto_trade run` processes pending signals in a loop, and every one of
+them is a **dry run**. It walks the whole workflow against the real terminal and
+stops at `DRY_RUN_COMPLETED`, so it exercises the signal source, the risk engine,
+the state machine, and the order dialog together, on a schedule, without an
+account changing.
+
+```powershell
+python -m auto_trade run --max-signals 5 --timeout 120
+python -m auto_trade run --mock          # no terminal needed
+```
+
+**It cannot place an order, by construction.** It builds the same workflow
+`dry-run` uses, from the same function, with the gate explicitly disabled, and
+the mock adapter refuses unconditionally. Placing an order stays in
+`execute --confirm-demo`, which a person runs per signal.
+
+A loop that confirmed once and then traded for hours would turn one deliberate
+act into an unbounded one, and `--confirm-demo` would stop meaning what it says.
+That is why the loop is a rehearsal and not a trader.
+
+**It stops rather than pushing on** in three cases: when the kill switch is
+active, when a signal's outcome is `UNKNOWN` because an attempt that could not be
+proven is a question for a person and never something to retry, and when the
+timeout or `--max-signals` is reached.
+
+With no signal source configured it reads the local signal directory, so a file
+run needs nothing set up. See [signal protocol](SIGNAL_PROTOCOL.md).
+
 ## Turning it on
 
 ```dotenv
