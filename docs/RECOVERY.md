@@ -32,6 +32,35 @@ What is pinned by `tests/integration/test_crash_recovery.py`:
 - a snapshot written before a terminal restart is refused as stale rather than
   read as the current account.
 
+## Recovering from a stale snapshot
+
+Refusing a stale snapshot is only half of it. The other half is what happens
+when the indicator is attached again and the snapshot starts reporting, because
+an adapter that captured its baseline during the outage would otherwise stay
+unusable for the rest of the process.
+
+It recovers by reading the account again rather than by carrying anything
+forward. The account is observed once while the order is prepared, and once
+more immediately before the final control, and the click is refused unless the
+two readings are identical. A refusal names both readings, so the operator can
+see what changed:
+
+```
+refusing to execute: the observed positions changed between preparing the
+order and using the final control (no positions became 999:EURUSD:BUY:0.01).
+Re-check the account and prepare again.
+```
+
+The same check covers the case that is not an outage at all. Between preparing
+an order and using its final control, a position can be opened by hand or by a
+terminal recovering a crashed order. Verifying against the earlier reading
+would attribute somebody else's position to this order, or hide the one this
+order opened behind the position it was compared against. So the reading is
+taken again, and a difference is a refusal.
+
+An account that cannot be observed at that moment is also a refusal. Recovering
+never means proceeding on the strength of a reading that could not be taken.
+
 What is not automated, and why: killing a real terminal mid-order needs a person
 and a running MT5 build. The automated test proves the durable behaviour, not
 the terminal's.

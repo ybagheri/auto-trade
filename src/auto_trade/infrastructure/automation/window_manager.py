@@ -151,6 +151,22 @@ def _element_gone() -> tuple[type[BaseException], ...]:
 
 
 
+def _describe(positions: tuple[PositionSnapshot, ...] | None) -> str:
+    """Name a position reading for an operator-facing refusal.
+
+    A refusal has to say what was seen, or the operator is left guessing which of
+    two readings was which. Nothing here is derived from a token.
+    """
+    if positions is None:
+        return "no reading"
+    if not positions:
+        return "no positions"
+    return ", ".join(
+        f"{position.position_id}:{position.symbol}:{position.side}:{position.volume}"
+        for position in positions
+    )
+
+
 def _owner_pid(window: Any) -> int:
     """The process that owns *window*, or ``-1`` when the tree does not say.
 
@@ -642,6 +658,38 @@ class MT5DesktopAdapter:
             self._baseline = None
             self._baseline_error = str(exc)
 
+    def _confirm_baseline_unchanged(self) -> str:
+        """Re-read the account immediately before the click and compare.
+
+        The baseline captured while the dialog was prepared is not reused as-is.
+        Preparation and the click are separated by however long a person, a
+        dialog, or a retry takes, and the account can change in between: a
+        position can be opened by hand, by a terminal that recovered a crashed
+        order, or by this application on an earlier attempt. Verifying against a
+        baseline from before that moment would attribute someone else's position
+        to this order, or hide a position this order actually opened behind the
+        one it was compared against.
+
+        So the account is observed again here, and the click is refused unless
+        the two readings agree exactly. A disagreement, or an account that can no
+        longer be observed at all, is a refusal: recovering from a stale snapshot
+        means taking a fresh reading, never carrying the old one forward.
+        """
+        try:
+            current = self.capture_positions()
+        except PositionSnapshotUnavailable as exc:
+            return (
+                "refusing to execute: the account could not be observed immediately "
+                f"before the final control: {exc}"
+            )
+        if current != self._baseline:
+            return (
+                "refusing to execute: the observed positions changed between preparing "
+                f"the order and using the final control ({_describe(self._baseline)} "
+                f"became {_describe(current)}). Re-check the account and prepare again."
+            )
+        return ""
+
     @staticmethod
     def _format_decimal(value: Decimal) -> str:
         return format(value, "f")
@@ -669,6 +717,14 @@ class MT5DesktopAdapter:
         if self._baseline is None:
             detail = self._baseline_error or "no position baseline was captured"
             return refused_result(request, f"refusing to execute: {detail}")
+        # The last read before the click, so verification compares against the
+        # account as it was at the moment of the click rather than as it was when
+        # the dialog was prepared. This also clears a baseline left unusable by an
+        # earlier outage: a stale snapshot that has since gone fresh is recovered
+        # by reading it again here, not by carrying the stale-era reading forward.
+        drift = self._confirm_baseline_unchanged()
+        if drift:
+            return refused_result(request, drift)
         try:
             dialog_manager = self.window_manager
             confirm_dialog_matches(dialog_manager, request)

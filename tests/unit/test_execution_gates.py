@@ -11,8 +11,13 @@ from decimal import Decimal
 import pytest
 
 from auto_trade.domain.enums import ExecutionStatus, OrderAction
-from auto_trade.domain.exceptions import AutomationRejectedError
-from auto_trade.domain.models import OrderRequest, TerminalProfile, TradeSignal
+from auto_trade.domain.exceptions import AutomationRejectedError, PositionSnapshotUnavailable
+from auto_trade.domain.models import (
+    OrderRequest,
+    PositionSnapshot,
+    TerminalProfile,
+    TradeSignal,
+)
 from auto_trade.infrastructure.automation import MT5DesktopAdapter, MT5WindowManager
 from auto_trade.infrastructure.automation.execution import (
     BUY_BUTTON_ID,
@@ -98,20 +103,40 @@ def profile() -> TerminalProfile:
     )
 
 
+class StaticPositions:
+    """A position provider that always reports the same reading.
+
+    `execute_order` now observes the account again immediately before the click
+    and refuses unless the two readings agree, so a test that injects a baseline
+    directly needs a provider that reports that same baseline rather than one
+    that fails to read.
+    """
+
+    def __init__(self, positions: tuple[PositionSnapshot, ...] = ()) -> None:
+        self.positions_value = positions
+        self.reads = 0
+
+    def positions(self) -> tuple[PositionSnapshot, ...]:
+        self.reads += 1
+        return self.positions_value
+
+
 def adapter_for(
     manager: FakeManager,
     gate: ExecutionGate,
     baseline: bool = True,
+    positions: tuple[PositionSnapshot, ...] = (),
 ) -> MT5DesktopAdapter:
+    provider = StaticPositions(positions)
     adapter = MT5DesktopAdapter(
         profile(),
         manager,
-        position_provider=None,
+        position_provider=provider,
         gate=gate,
     )
     adapter.connected = True
     if baseline:
-        adapter._baseline = ()
+        adapter._baseline = positions
     return adapter
 
 
@@ -187,6 +212,113 @@ def test_execution_is_refused_without_an_observed_baseline() -> None:
     assert result.status is ExecutionStatus.REJECTED
     assert "unavailable" in result.message
     assert button.clicks == 0
+
+
+class ChangingPositions:
+    """A provider whose reading changes between the two observations.
+
+    `execute_order` makes exactly one read of its own; the baseline is set
+    directly, standing in for the earlier read taken during preparation.
+    """
+
+    def __init__(self, current: tuple[PositionSnapshot, ...]) -> None:
+        self.current = current
+        self.reads = 0
+
+    def positions(self) -> tuple[PositionSnapshot, ...]:
+        self.reads += 1
+        return self.current
+
+
+def test_a_position_appearing_between_preparing_and_clicking_refuses() -> None:
+    """The account can change while the dialog waits for a click.
+
+    Verifying against the reading taken at preparation time would attribute
+    somebody else's position to this order, or hide the one this order opened
+    behind the position it was compared against.
+    """
+    button = buy_button()
+    manager = FakeManager(fields(), [button])
+    appeared = (PositionSnapshot("999", "EURUSD", "BUY", Decimal("0.01")),)
+    provider = ChangingPositions(appeared)
+    adapter = MT5DesktopAdapter(profile(), manager, position_provider=provider, gate=OPEN_GATE)
+    adapter.connected = True
+    adapter._baseline = ()
+
+    result = adapter.execute_order(request())
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert "changed between preparing" in result.message
+    assert "999:EURUSD:BUY:0.01" in result.message
+    assert button.clicks == 0
+    assert manager.opened == 0
+
+
+def test_an_account_that_cannot_be_re_read_refuses_before_the_click() -> None:
+    """Losing observation between preparing and clicking is a refusal."""
+
+    class Gone:
+        def positions(self) -> tuple[PositionSnapshot, ...]:
+            raise PositionSnapshotUnavailable("position snapshot is stale (129.4s old, limit 30s)")
+
+    button = buy_button()
+    manager = FakeManager(fields(), [button])
+    adapter = MT5DesktopAdapter(profile(), manager, position_provider=Gone(), gate=OPEN_GATE)
+    adapter.connected = True
+    adapter._baseline = ()
+
+    result = adapter.execute_order(request())
+
+    assert result.status is ExecutionStatus.REJECTED
+    assert "immediately before the final control" in result.message
+    assert button.clicks == 0
+
+
+def test_a_stale_baseline_recovers_by_reading_again_rather_than_staying_refused() -> None:
+    """The second half of the staleness guard: an outage, then a recovery.
+
+    An adapter that captured its baseline while the indicator was detached
+    refuses every order afterwards. Recovering means taking a fresh reading
+    before the click, not carrying the unusable one forward and not requiring
+    the operator to restart anything.
+    """
+    class Recovers:
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def positions(self) -> tuple[PositionSnapshot, ...]:
+            self.reads += 1
+            if self.reads == 1:
+                raise PositionSnapshotUnavailable("position snapshot is stale (84756.8s old, limit 30s)")
+            return ()
+
+    button = buy_button()
+    manager = FakeManager(fields(), [button])
+    provider = Recovers()
+    adapter = MT5DesktopAdapter(profile(), manager, position_provider=provider, gate=OPEN_GATE)
+    adapter.connected = True
+    adapter._capture_baseline()  # the outage: baseline is None, with the reason
+    assert adapter._baseline is None
+    assert "stale" in (adapter._baseline_error or "")
+
+    # The operator prepares again once the indicator is attached and reporting.
+    adapter._capture_baseline()
+    result = adapter.execute_order(request())
+
+    assert result.status is ExecutionStatus.REQUESTED
+    assert button.clicks == 1
+
+
+def test_an_unchanged_account_still_clicks() -> None:
+    """The re-read must not stop the ordinary path from working."""
+    button = buy_button()
+    manager = FakeManager(fields(), [button])
+    adapter = adapter_for(manager, OPEN_GATE)
+
+    result = adapter.execute_order(request())
+
+    assert result.status is ExecutionStatus.REQUESTED
+    assert button.clicks == 1
 
 
 def test_unsupported_action_is_refused_without_clicking() -> None:

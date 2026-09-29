@@ -170,7 +170,14 @@ class SnapshotReader:
 
     ``after=None`` kills the process on the first read that follows the click,
     which is the exact point a window is written about elsewhere.
+
+    The account is now read twice before the click as well: once while the order
+    is prepared, and once more immediately before the final control, which must
+    agree with the first. The first three reads therefore all return the same
+    empty baseline, and only a read that follows the click moves on.
     """
+
+    PRE_CLICK_READS = 3
 
     def __init__(self, after: tuple[PositionSnapshot, ...] | None = None) -> None:
         self.after = after
@@ -178,7 +185,7 @@ class SnapshotReader:
 
     def positions(self) -> tuple[PositionSnapshot, ...]:
         self.reads += 1
-        if self.reads == 1:
+        if self.reads <= self.PRE_CLICK_READS:
             return ()
         if self.after is None:
             raise ProcessDied("the process was killed before the observation completed")

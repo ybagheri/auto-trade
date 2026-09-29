@@ -134,6 +134,15 @@ compiled. See [packaging](docs/PACKAGING.md).
       retry cannot overwrite the record, and only `reconcile` settles it. A
       proved fill whose result never reached disk is still not recorded as
       `ACCEPTED`. See `tests/integration/test_crash_recovery.py`.
+  - The staleness guard now covers both halves. A stale snapshot is refused, and
+      an adapter that captured its baseline during the outage recovers by reading
+      the account again rather than staying unusable. The account is observed once
+      while the order is prepared and once more immediately before the final
+      control, and the click is refused unless the two readings are identical. That
+      also closes the case that is not an outage at all: a position opened between
+      the two readings, by hand or by a terminal recovering a crashed order, can no
+      longer be attributed to this order or used to hide one. See
+      [recovery](docs/RECOVERY.md).
   - Still open: the same sequence against a real terminal restart, which needs
       a person to kill the terminal mid-order.
 - [ ] Structured metrics and latency observability.
