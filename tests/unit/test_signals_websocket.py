@@ -4,9 +4,9 @@ import base64
 import hashlib
 import json
 import socket
-import time
 import struct
 import threading
+import time
 from collections.abc import Callable, Iterator
 from typing import Any
 

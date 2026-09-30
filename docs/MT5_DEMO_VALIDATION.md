@@ -278,6 +278,47 @@ settle. Row 34 is the open item, and the `Type` combo that already reads
 `Market Execution` is the thing somebody has to make that decision about.
 
 
+## The 2026-09-30 session — a real terminal restart, and a session without admin
+
+Same machine and same terminal as the 6230 section above (`Alpari MT5_5`,
+`BF4EF096D1140DE6DC1607EA4FC613AB`, account `53183488`), re-measured after the
+terminal was closed and relaunched. **No order was prepared, no final control was
+used, and the account was not touched**; this is a read-only session, so it adds
+no evidence about placing a trade.
+
+| Fact | Value |
+| --- | --- |
+| Build, three sources | `5.0.0.6230` (executable version resource), `terminal_build: 6230` (indicator), `Alpari MT5 x64 build 6230 started` (journal) — all three agree |
+| Session privilege | `mandasoysgp\bagheri` is **not** a member of `Administrators`; no elevation anywhere in the code |
+| Terminal before | pid 6408, closed cleanly: journal `exit with code 0`, `stopped with 0`, `shutdown with 0` |
+| Terminal after | relaunched as pid 9708; the indicator reloaded by itself, `custom indicator AutoTradePositionReader (EURUSD,H1) loaded succesfully` |
+| Probe | `terminal-check --no-record`: `verdict OK`, `checked 13`, `drifted`/`missing`/`ambiguous`/`not_probed` all empty |
+| Account at the end | `positions: []`; `terminal_discovery: found`; both final controls `false` in `.env` and absent from the shell |
+
+| # | Date | Terminal | Account | Item | Symbol / action / volume | Expected | Actual | Verification method | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 35 | 2026-09-30 | Alpari MT5_5 6230 | 53183488 | the staleness guard on a real terminal outage | — | a snapshot frozen by the terminal exiting is refused, never read as an empty account | `UNAVAILABLE`, `position snapshot is stale (76.0s old, limit 30s)`, at the second the process was gone. The file on disk still read `sequence 664, positions: []`, so reading it would have reported a confidently flat account | `position-snapshot` while pid 6408 was absent; the journal's `exit with code 0`; the file read directly | PASS |
+| 36 | 2026-09-30 | Alpari MT5_5 6230 | 53183488 | discovery follows a real terminal restart | — | the new process is resolved and the window still pinned by pid, not by title | `terminal_identity` expected `pid 9708` and found it, with `the window was selected by process id, not by its title`. The old pid 6408 was never a fallback | `terminal-check --no-record`; `diagnostics` | PASS |
+| 37 | 2026-09-30 | Alpari MT5_5 6230 | 53183488 | UI automation from a session with no admin rights | — | the accessibility tree is readable at the session's own privilege level | all 13 controls read and matched, including `market_execution_button` found as `Market Execution` and both final controls `10408` / `10409`. No elevation is requested anywhere in the code | `terminal-check --no-record`; `WindowsIdentity` / `WindowsPrincipal` for the session | PASS |
+| 38 | 2026-09-30 | Alpari MT5_5 6230 | 53183488 | the indicator attach survives a terminal restart | — | the chart keeps the indicator, so the snapshot resumes without a human step | the journal logged the indicator `loaded succesfully` on the relaunch and the snapshot resumed, reaching `sequence 2512`, `complete: true` | the journal; `position-snapshot` | PASS |
+
+**Row 37 is the one that was never tested.** Everything measured before this
+session ran with the option of elevation, so it was never established that the
+guarded path can read the order dialog at all on a machine where the operator is
+not an administrator. It can. The practical consequence is that build 6230 is
+fully measurable on a per-user install with no privileges beyond the account's
+own, which is the ordinary case for a demo terminal.
+
+**What this session does not show.** The terminal was closed while it was idle,
+not mid-order, so the open item in [recovery](RECOVERY.md) — a terminal killed
+between the click and the observation — is untouched, and nothing here should be
+read as moving it. Row 37 re-confirms the identifiers row 16 already recorded on
+this build, after a restart and at a lower privilege; it is not a new capability.
+
+**The account was left exactly as found:** no position, no order, no execution
+record, and no change to either final control.
+
+
 ## Clicks that left no record in this application
 
 Between 10:52 and 10:55 local the terminal journal records six `market buy` and

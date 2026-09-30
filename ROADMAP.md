@@ -165,7 +165,17 @@ compiled. See [packaging](docs/PACKAGING.md).
       DPI scaling fault. DPI was never the obstacle here; what actually needed
       measuring was which controls the build presents. See
       [MT5 demo validation](docs/MT5_DEMO_VALIDATION.md).
+  - The work spans **two machines** and these figures are per-machine, so they do
+      not all describe the terminal currently in `.env`. The 5430 figures are from
+      the machine whose checkout is `D:\Projects\auto-trade`; the machine whose
+      checkout is `E:\auto-trade` runs build 6230 at `VirtualScreen 1366x768`,
+      96 DPI. Still one monitor and still no scaling fault, so the conclusion that
+      DPI is not the obstacle carries across, but the smaller geometry there is
+      untested. See [HANDOFF.md](HANDOFF.md).
 - [ ] Decide how build 5430's order dialog is to be traded, or stop supporting it.
+  - Build 5430 is **not** installed on both machines. It is the build on the
+      `D:\Projects\auto-trade` machine; the `E:\auto-trade` machine runs 6230 and
+      is unaffected. Do not restate these rows against a different build.
   - Build 5430 has no execution-mode *button*. Its `Type` combo (`10338`) already
       reads `Market Execution` when the dialog opens, so the guarded order path
       refuses at `select_market_execution` and this build cannot be traded through

@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from auto_trade.domain.enums import ExecutionStatus
-from auto_trade.domain.exceptions import AutomationError
 from auto_trade.domain.models import OrderRequest, TerminalProfile, TradeSignal
 from auto_trade.infrastructure.automation import MT5DesktopAdapter, MT5WindowManager
 
@@ -80,7 +77,7 @@ class ClosingTree(FakeTree):
 
 def manager_for(tree: FakeTree) -> MT5WindowManager:
     manager = MT5WindowManager()
-    manager._window = tree  # type: ignore[assignment]
+    manager._window = tree
     return manager
 
 
@@ -131,7 +128,7 @@ def test_nothing_to_close_is_reported_rather_than_raising() -> None:
 def test_tidying_up_does_not_raise_when_the_window_is_gone() -> None:
     """A destroyed element must not turn tidying up into a second failure."""
     manager = MT5WindowManager()
-    manager._window = None  # type: ignore[assignment]
+    manager._window = None
 
     assert manager.close_any_order_dialog() is False
 

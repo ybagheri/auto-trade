@@ -289,7 +289,9 @@ def test_a_stale_baseline_recovers_by_reading_again_rather_than_staying_refused(
         def positions(self) -> tuple[PositionSnapshot, ...]:
             self.reads += 1
             if self.reads == 1:
-                raise PositionSnapshotUnavailable("position snapshot is stale (84756.8s old, limit 30s)")
+                raise PositionSnapshotUnavailable(
+                    "position snapshot is stale (84756.8s old, limit 30s)"
+                )
             return ()
 
     button = buy_button()

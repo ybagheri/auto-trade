@@ -10,9 +10,11 @@ Read this first, then [ROADMAP.md](../ROADMAP.md) for the phase plan and
 For what the 2026-09-29 session changed and what it left open, see
 [the session summary](SESSION_2026-09-29.md).
 
-**State as of 2026-09-29.** `main` is green: 578 tests, `ruff` clean, `mypy
---strict` clean. Every claim below was either executed on this machine or is
-labelled as not run.
+**State as of 2026-09-30.** `main` is green: 602 passed and 1 skipped, `ruff`
+clean, `mypy --strict` clean, all on Machine A (see
+[HANDOFF.md](../HANDOFF.md) for which machine is which — the terminal facts in
+this repository are per-machine). Every claim below was either executed on a
+real machine or is labelled as not run.
 
 ## What this is
 
