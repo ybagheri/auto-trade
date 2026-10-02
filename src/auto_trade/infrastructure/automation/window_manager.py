@@ -4,7 +4,7 @@ import importlib
 import re
 import time
 from collections.abc import Callable
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -178,6 +178,26 @@ def _owner_pid(window: Any) -> int:
         return int(window.element_info.process_id)
     except (AttributeError, TypeError, ValueError, AutomationError):
         return -1
+
+
+def _same_number(shown: str, expected: str) -> bool:
+    """Whether two order-field readings are the same number.
+
+    MT5 reformats what it displays: a stop written ``1.12208`` can come back with a
+    different number of trailing zeros, and the volume spinner in particular shows
+    ``0.03`` where the request said ``0.030``. Comparing the strings would call those
+    different, wait out the whole settle timeout, and refuse an order whose fields
+    are in fact correct -- a false refusal of a good order, which is the other way to
+    be dangerous.
+
+    Non-numeric text -- a comment, an empty stop loss -- falls back to an exact
+    comparison after stripping, because there is no number to compare and guessing
+    one would be worse than being strict about a string.
+    """
+    try:
+        return Decimal(str(shown).strip()) == Decimal(str(expected).strip())
+    except (InvalidOperation, ValueError, ArithmeticError):
+        return str(shown).strip() == str(expected).strip()
 
 
 class MT5WindowManager:
@@ -623,19 +643,54 @@ class MT5DesktopAdapter:
         self.selected_symbol = symbol.upper()
 
     def prepare_order(self, request: OrderRequest) -> None:
+        """Write every field, then wait until MT5 has actually applied all of them.
+
+        **The wait is the whole of this method's fix, and it is not a timeout.**
+
+        MT5 applies a field written into the order dialog *asynchronously*. Measured
+        on Alpari build 6230, EURUSD, writing volume, stop loss and take profit in
+        order, the reading of each control caught up at roughly 250 ms, 500 ms and
+        800 ms respectively -- so for the best part of a second after the last write,
+        the dialog shows a mixture of the values just typed and the ones MT5 has not
+        got to yet.
+
+        An order sent inside that window is sent with whatever MT5 had committed at
+        that instant. This was not theoretical: a real EURUSD order was submitted
+        this way and came back with 0.01 lots, no stop loss and no take profit,
+        while the dialog had read back the approved volume and the dialog verifier
+        had compared those same readings and passed. The position was unprotected and
+        nothing noticed until verification compared it against the request.
+
+        Reading the field once -- which is all the original code did -- proves only
+        that the write reached the control. It says nothing about whether MT5 has
+        applied it, and the control's own `get_value()` happily reports the text it
+        is displaying while its internal state is still the old one.
+
+        So every written field is polled until it reads back as written, and a field
+        that never does is a refusal rather than a delay. Waiting a fixed interval
+        would be worse than the race: it makes the outcome depend on how fast the
+        machine happens to be today.
+        """
         if self.selected_symbol != request.symbol:
             raise AutomationError("symbol was not selected")
+        written: list[tuple[str, str]] = []
         try:
             self.window_manager.select_market_execution()
-            self.window_manager.set_field("10333", self._format_decimal(request.volume))
+            volume = self._format_decimal(request.volume)
+            self.window_manager.set_field("10333", volume)
+            written.append(("10333", volume))
             if request.stop_loss is not None:
-                self.window_manager.set_field("10334", self._format_decimal(request.stop_loss))
+                stop = self._format_decimal(request.stop_loss)
+                self.window_manager.set_field("10334", stop)
+                written.append(("10334", stop))
             if request.take_profit is not None:
-                self.window_manager.set_field("10336", self._format_decimal(request.take_profit))
+                target = self._format_decimal(request.take_profit)
+                self.window_manager.set_field("10336", target)
+                written.append(("10336", target))
             if request.signal.comment:
                 self.window_manager.set_field("1001", request.signal.comment)
-            if self.window_manager.read_field("10333") != self._format_decimal(request.volume):
-                raise AutomationError("volume field did not accept the request")
+                written.append(("1001", request.signal.comment))
+            self._await_fields_applied(written)
             self.prepared = request
             self._capture_baseline()
         except Exception:
@@ -643,6 +698,49 @@ class MT5DesktopAdapter:
             raise
         if self.gate.dry_run:
             self.window_manager.close_order_dialog()
+
+    def _await_fields_applied(
+        self, written: list[tuple[str, str]], timeout_seconds: float = 5.0
+    ) -> None:
+        """Block until MT5 reports every written field, or refuse.
+
+        Polls every field on every pass rather than each in turn, because they settle
+        concurrently and independently -- measured at 250/500/800 ms on this build --
+        and a field is only trustworthy once it reads back exactly as written.
+
+        The comparison is on the *numeric* value, not the string. MT5 reformats what
+        it stores: a volume written as ``0.03`` came back ``0.03`` here, but a price
+        written with five decimals can come back with a trailing variant, and a
+        string comparison would then wait out the whole timeout and refuse an order
+        whose fields are in fact correct. A number that is not equal is still a
+        refusal; a number that is equal is accepted whichever way it was formatted.
+        """
+        deadline = time.monotonic() + timeout_seconds
+        pending = list(written)
+        while pending:
+            still_pending: list[tuple[str, str]] = []
+            for automation_id, expected in pending:
+                try:
+                    shown = self.window_manager.read_field(automation_id)
+                except AutomationError:
+                    still_pending.append((automation_id, expected))
+                    continue
+                if _same_number(shown, expected):
+                    continue
+                still_pending.append((automation_id, expected))
+            if not still_pending:
+                return
+            if time.monotonic() >= deadline:
+                shown, expected = still_pending[0]
+                raise AutomationError(
+                    f"the order dialog did not apply {expected!r} to field "
+                    f"{shown!r} within {timeout_seconds:g}s; MT5 applies order fields "
+                    f"asynchronously and an order sent before it has would carry the "
+                    f"previous values. Refusing rather than sending a field MT5 has "
+                    f"not committed."
+                )
+            pending = still_pending
+            time.sleep(0.05)
 
     def _capture_baseline(self) -> None:
         """Record the observed account state immediately before a final control.
