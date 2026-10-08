@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import logging
+import random
 import re
 import time
 from collections.abc import Callable
@@ -34,6 +36,7 @@ from .closing import (
 )
 from .execution import (
     ExecutionGate,
+    PreSubmitDelay,
     assert_action_supported,
     click_final_control,
     confirm_dialog_matches,
@@ -42,6 +45,8 @@ from .execution import (
     wait_for_dialog_to_close,
 )
 from .positions_file import MT5FilePositionSnapshotProvider
+
+logger = logging.getLogger(__name__)
 
 MENU_OPEN_SECONDS = 5.0
 MENU_SETTLE_SECONDS = 3.0
@@ -599,11 +604,21 @@ class MT5DesktopAdapter:
         position_provider: Any | None = None,
         gate: ExecutionGate | None = None,
         close_gate: CloseGate | None = None,
+        pre_submit_delay: PreSubmitDelay | None = None,
+        sleeper: Callable[[float], None] | None = None,
+        rng: random.Random | None = None,
     ) -> None:
         self.profile = profile
         self.window_manager = window_manager or MT5WindowManager()
         self.gate = gate if gate is not None else ExecutionGate()
         self.close_gate = close_gate if close_gate is not None else CloseGate()
+        self.pre_submit_delay = (
+            pre_submit_delay if pre_submit_delay is not None else PreSubmitDelay()
+        )
+        self._sleeper = sleeper if sleeper is not None else time.sleep
+        # Per-instance PRNG so concurrent adapters do not share state; a plain
+        # PRNG is correct here because the value is UI pacing, not security.
+        self._rng = rng if rng is not None else random.Random()
         if position_provider is None:
             position_provider = MT5FilePositionSnapshotProvider(
                 Path(profile.data_path) / "MQL5" / "Files"
@@ -788,6 +803,31 @@ class MT5DesktopAdapter:
             )
         return ""
 
+    def _maybe_pause_before_submit(self, request: OrderRequest) -> None:
+        """Take the configured intra-dialog pause, if one is enabled.
+
+        Called strictly between ``confirm_dialog_matches`` and
+        ``click_final_control``: the dialog is fully filled and verified, and
+        nothing has been clicked yet. Every refusal path (gate, baseline,
+        drift, dialog mismatch) returns before this point, so a refusal never
+        sleeps. Dry runs never reach here either: the gate refuses them first,
+        and the explicit check below keeps that true even if the gate logic
+        changes. The pause affects timing only, never the decision, prices,
+        or volume.
+        """
+        delay = self.pre_submit_delay
+        if delay is None or not delay.enabled:
+            return
+        if self.gate.dry_run:
+            return
+        delay_ms = delay.roll(self._rng)
+        logger.info(
+            "pre-submit pause of %d ms before the final control (signal_id=%s)",
+            delay_ms,
+            request.signal.signal_id,
+        )
+        self._sleeper(delay_ms / 1000.0)
+
     @staticmethod
     def _format_decimal(value: Decimal) -> str:
         return format(value, "f")
@@ -826,6 +866,7 @@ class MT5DesktopAdapter:
         try:
             dialog_manager = self.window_manager
             confirm_dialog_matches(dialog_manager, request)
+            self._maybe_pause_before_submit(request)
             click_final_control(dialog_manager, request.action)
         except (AutomationError, AutomationRejectedError) as exc:
             return refused_result(request, f"refusing to execute: {exc}")

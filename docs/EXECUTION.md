@@ -48,6 +48,34 @@ risk engine approved. A dialog that has been repopulated, partially edited, or
 left over from an earlier run is refused rather than submitted. Volume comparison
 normalises both sides, so `0.010` and `0.01` are equal.
 
+## Pre-submit pause
+
+After the dialog is verified and immediately before the final control is
+clicked, `execute_order` can wait a freshly rolled duration. The pause sits at
+the narrowest point in `execute_order`: after `confirm_dialog_matches` passes
+and before `click_final_control`. It never occurs before the dialog is
+prepared, during field entry, after the click, or during `verify_execution`.
+
+```dotenv
+AUTO_TRADE_PRE_SUBMIT_DELAY_ENABLED=true
+AUTO_TRADE_PRE_SUBMIT_DELAY_MIN_MS=1000
+AUTO_TRADE_PRE_SUBMIT_DELAY_MAX_MS=5000
+```
+
+Defaults are `false`, `1000`, `5000`, so default behavior is unchanged:
+disabled means no sleep and no extra log lines. When enabled, each order rolls
+its own duration uniformly from `MIN_MS` to `MAX_MS` inclusive, sleeps that
+long, and logs the rolled duration with the signal id. A configured `MIN_MS`
+of `0` is legitimate. Bounds are validated loudly at load (integers only, min
+`>= 0`, max `>=` min, sanity cap of 3600000 ms), never silently defaulted.
+
+This is UI pacing only. It does not affect the decision, prices, or volume,
+and it is not a way to bypass automation detection: there is no randomized
+mouse movement, no fake human behavior, and no timing change anywhere else.
+Every gate above still applies unchanged, and every refusal path (gate,
+baseline, drift, dialog mismatch) returns before the pause is taken. Dry runs
+never sleep.
+
 ## A click is not a fill
 
 `execute_order` returns `REQUESTED`, never `ACCEPTED`, and its message says

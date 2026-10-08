@@ -8,6 +8,8 @@ resulting position are established separately by independent observation.
 
 from __future__ import annotations
 
+import os
+import random
 import time
 from dataclasses import dataclass
 from decimal import Decimal
@@ -31,6 +33,100 @@ STOP_LOSS_FIELD_ID = "10334"
 TAKE_PROFIT_FIELD_ID = "10336"
 
 ALLOWED_ACTIONS = {OrderAction.BUY, OrderAction.SELL}
+
+# Upper bound for the intra-dialog pre-submit pause. A value above this is
+# almost certainly a seconds-vs-milliseconds mistake (e.g. 5000 seconds where
+# 5000 ms was meant), so it is rejected loudly at load rather than waited out.
+PRE_SUBMIT_DELAY_MAX_MS_CAP = 3_600_000
+PRE_SUBMIT_DELAY_DEFAULT_MIN_MS = 1000
+PRE_SUBMIT_DELAY_DEFAULT_MAX_MS = 5000
+
+
+def _parse_delay_ms(raw: str, name: str) -> int:
+    """Parse an ``AUTO_TRADE_PRE_SUBMIT_DELAY_*_MS`` value strictly as an integer.
+
+    ``int()`` alone would accept surrounding whitespace (handled by stripping
+    first) but also strings like ``"1_000"``; the explicit digit check keeps the
+    accepted shape to an optional sign followed by digits, so ``"1.5"``,
+    ``"true"``, ``""``, and ``"1e3"`` are all rejected loudly rather than
+    truncated or defaulted.
+    """
+    text = raw.strip()
+    if not text or not text.lstrip("+-").isdigit():
+        raise ValueError(
+            f"{name} must be an integer number of milliseconds, got {raw!r}"
+        )
+    return int(text)
+
+
+@dataclass(frozen=True)
+class PreSubmitDelay:
+    """Randomized UI-pacing pause taken inside the order dialog before the click.
+
+    This is pacing only: it changes when the final control is used, never
+    whether it is used, nor the prices or volume it carries. It is rolled fresh
+    per order with a plain PRNG (``random.Random``), which is appropriate
+    because the value is UI pacing rather than anything security-sensitive.
+    No randomized mouse movement, fake human behaviour, or timing manipulation
+    anywhere else is involved.
+    """
+
+    enabled: bool = False
+    min_ms: int = PRE_SUBMIT_DELAY_DEFAULT_MIN_MS
+    max_ms: int = PRE_SUBMIT_DELAY_DEFAULT_MAX_MS
+
+    def __post_init__(self) -> None:
+        for label, value in (("min_ms", self.min_ms), ("max_ms", self.max_ms)):
+            if type(value) is not int:
+                raise ValueError(
+                    f"pre-submit delay {label} must be an integer number of "
+                    f"milliseconds, got {value!r}"
+                )
+        if self.min_ms < 0:
+            raise ValueError(
+                f"pre-submit delay min_ms must be >= 0, got {self.min_ms}"
+            )
+        if self.max_ms < self.min_ms:
+            raise ValueError(
+                f"pre-submit delay max_ms ({self.max_ms}) must be >= min_ms "
+                f"({self.min_ms})"
+            )
+        if self.max_ms > PRE_SUBMIT_DELAY_MAX_MS_CAP:
+            raise ValueError(
+                f"pre-submit delay max_ms ({self.max_ms}) exceeds the sanity cap "
+                f"of {PRE_SUBMIT_DELAY_MAX_MS_CAP} ms (1h); check for a "
+                "seconds-vs-milliseconds mistake"
+            )
+        if self.min_ms > PRE_SUBMIT_DELAY_MAX_MS_CAP:
+            raise ValueError(
+                f"pre-submit delay min_ms ({self.min_ms}) exceeds the sanity cap "
+                f"of {PRE_SUBMIT_DELAY_MAX_MS_CAP} ms (1h); check for a "
+                "seconds-vs-milliseconds mistake"
+            )
+
+    def roll(self, rng: random.Random) -> int:
+        """Roll one fresh duration, inclusive on both ends."""
+        return rng.randint(self.min_ms, self.max_ms)
+
+    @classmethod
+    def from_env(cls) -> PreSubmitDelay:
+        enabled = (
+            os.getenv("AUTO_TRADE_PRE_SUBMIT_DELAY_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"}
+        )
+        min_raw = os.getenv(
+            "AUTO_TRADE_PRE_SUBMIT_DELAY_MIN_MS", str(PRE_SUBMIT_DELAY_DEFAULT_MIN_MS)
+        )
+        max_raw = os.getenv(
+            "AUTO_TRADE_PRE_SUBMIT_DELAY_MAX_MS", str(PRE_SUBMIT_DELAY_DEFAULT_MAX_MS)
+        )
+        # NOTE: no `or`-default idiom here: a configured MIN_MS of 0 is
+        # legitimate and falsy, and must survive loading.
+        min_ms = _parse_delay_ms(min_raw, "AUTO_TRADE_PRE_SUBMIT_DELAY_MIN_MS")
+        max_ms = _parse_delay_ms(max_raw, "AUTO_TRADE_PRE_SUBMIT_DELAY_MAX_MS")
+        return cls(enabled=enabled, min_ms=min_ms, max_ms=max_ms)
 
 
 @dataclass(frozen=True)

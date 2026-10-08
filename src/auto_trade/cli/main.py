@@ -830,6 +830,10 @@ def _dry_run_workflow(config: AppConfig, mock: bool) -> ExecutionWorkflow:
                 demo_only=config.policy.demo_only,
                 kill_switch_active=kill_switch.active,
             ),
+            # Carried for shape parity only: the gate above refuses before any
+            # pause could be taken, and the adapter additionally never sleeps
+            # while dry_run is set, so a dry run records no pause.
+            pre_submit_delay=config.pre_submit_delay,
         )
     )
     return ExecutionWorkflow(
@@ -993,7 +997,9 @@ def _execute_live(config: AppConfig, args: argparse.Namespace) -> int:
         demo_only=True,
         kill_switch_active=kill_switch.active,
     )
-    terminal = MT5DesktopAdapter(config.terminal_profile(), gate=gate)
+    terminal = MT5DesktopAdapter(
+        config.terminal_profile(), gate=gate, pre_submit_delay=config.pre_submit_delay
+    )
     policy = type(config.policy)(
         dry_run=False,
         demo_only=True,

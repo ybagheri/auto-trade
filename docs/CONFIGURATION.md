@@ -23,6 +23,17 @@ Runtime configuration currently comes from environment variables with safe defau
 | `AUTO_TRADE_WS_SIGNAL_TOKEN` | unset | shared token for that WebSocket source |
 | `AUTO_TRADE_API_URL` | unset | loopback URL of the local API, for a program that reads this one |
 | `AUTO_TRADE_API_TOKEN` | unset | token for the local API; required by it, never logged, never committed |
+| `AUTO_TRADE_PRE_SUBMIT_DELAY_ENABLED` | `false` | enables the intra-dialog pause before the final control; disabled means the execution path is unchanged |
+| `AUTO_TRADE_PRE_SUBMIT_DELAY_MIN_MS` | `1000` | lower bound of the rolled pause, in milliseconds; `0` is legitimate |
+| `AUTO_TRADE_PRE_SUBMIT_DELAY_MAX_MS` | `5000` | upper bound of the rolled pause, in milliseconds; must be `>=` min and `<=` 3600000 |
+
+When enabled, a fresh duration is rolled per order, uniformly from `MIN_MS` to
+`MAX_MS` inclusive, after `confirm_dialog_matches` passes and immediately before
+`click_final_control`. Refusals (gate, baseline, drift, dialog mismatch) and dry
+runs never sleep. Bounds are validated loudly at load: integers only, min `>= 0`,
+max `>=` min, and a sanity cap of 3600000 ms against seconds-vs-milliseconds
+mistakes. This is UI pacing only, not a way to bypass automation detection. See
+[execution](EXECUTION.md).
 
 `config/default.yaml` documents the intended human-readable shape. The current implementation does not parse YAML; do not assume a YAML edit changes runtime behavior.
 

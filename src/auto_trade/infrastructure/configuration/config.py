@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,6 +11,7 @@ from ...domain.models import ExecutionPolicy, RiskLimits, TerminalProfile
 from ...domain.protocols import SignalProvider
 from ..api_client import LocalApiClient
 from ..automation.closing import CloseGate
+from ..automation.execution import PreSubmitDelay
 from ..signals import HttpSignalProvider, NamedPipeSignalProvider, WebSocketSignalProvider
 from .env_file import load_env_file_with_origin
 
@@ -39,6 +40,7 @@ class AppConfig:
     pipe_signal_token: str = ""
     ws_signal_url: str = ""
     ws_signal_token: str = ""
+    pre_submit_delay: PreSubmitDelay = field(default_factory=PreSubmitDelay)
 
     @classmethod
     def from_env(cls) -> AppConfig:
@@ -106,6 +108,10 @@ class AppConfig:
             pipe_signal_token=os.getenv("AUTO_TRADE_PIPE_SIGNAL_TOKEN", "").strip(),
             ws_signal_url=os.getenv("AUTO_TRADE_WS_SIGNAL_URL", "").strip(),
             ws_signal_token=os.getenv("AUTO_TRADE_WS_SIGNAL_TOKEN", "").strip(),
+            # Intra-dialog pause before the final control. Disabled by default
+            # so the execution path is unchanged unless explicitly enabled.
+            # Validated loudly at load: see PreSubmitDelay.
+            pre_submit_delay=PreSubmitDelay.from_env(),
             risk=RiskLimits(
                 allowed_symbols=allowed,
                 max_volume=Decimal(os.getenv("AUTO_TRADE_MAX_VOLUME", "1.0")),
