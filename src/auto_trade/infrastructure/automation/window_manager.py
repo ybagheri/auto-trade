@@ -35,6 +35,7 @@ from .closing import (
     position_row,
 )
 from .execution import (
+    COMMIT_LABEL_FOR_FIELD,
     ExecutionGate,
     PreSubmitDelay,
     assert_action_supported,
@@ -183,6 +184,32 @@ def _owner_pid(window: Any) -> int:
         return int(window.element_info.process_id)
     except (AttributeError, TypeError, ValueError, AutomationError):
         return -1
+
+
+#: Characters pywinauto's send_keys/type_keys would otherwise interpret --
+#: ``~`` is Enter (which dismisses the order dialog), ``^``/``%``/``+`` are
+#: modifiers, braces wrap special keys, and parentheses group modifiers. A
+#: value containing any of these literally (a comment can) must be escaped,
+#: or typing it would press keys instead of writing text.
+_KEYS_ESCAPES = {
+    "{": "{{}",
+    "}": "{}}",
+    "+": "{+}",
+    "^": "{^}",
+    "%": "{%}",
+    "~": "{~}",
+    "(": "{(}",
+    ")": "{)}",
+}
+
+
+def _escape_keys(value: str) -> str:
+    """Escape a string so type_keys writes it literally.
+
+    Without this, a ``~`` in a comment would send Enter -- which dismisses
+    the order dialog -- and a ``^`` would hold Control for the next character.
+    """
+    return "".join(_KEYS_ESCAPES.get(char, char) for char in value)
 
 
 def _same_number(shown: str, expected: str) -> bool:
@@ -357,10 +384,23 @@ class MT5WindowManager:
         buttons[0].click_input()
 
     def set_field(self, automation_id: str, value: str) -> None:
+        """Write a field the way a keyboard does, so MT5 commits it.
+
+        ``set_edit_text`` sets the control's text through the accessibility
+        ValuePattern, which bypasses the keystroke messages MT5 commits on.
+        Measured on Alpari build 6230: the control then displays the typed
+        value indefinitely while MT5's committed order state keeps the
+        defaults, and a real order went out at 0.01 lots with no stop and no
+        target on exactly that basis. Real keystrokes (select-all, then type)
+        produce change notifications per character, which is what MT5 applies
+        -- verified by watching MT5's own committed-state labels flip within
+        half a second of the last keystroke.
+        """
         dialog = self.open_order_dialog()
         control = self._find_edit(dialog, automation_id)
         try:
-            control.set_edit_text(value)
+            control.set_focus()
+            control.type_keys("^a" + _escape_keys(value), with_spaces=True)
         except AttributeError as exc:
             raise AutomationError(f"field {automation_id} is not editable") from exc
 
@@ -371,6 +411,27 @@ class MT5WindowManager:
             return str(control.get_value()).strip()
         except AttributeError as exc:
             raise AutomationError(f"field {automation_id} cannot be read") from exc
+
+    def read_commit_label(self, automation_id: str) -> str:
+        """MT5's own rendering of its committed order state for one label.
+
+        Unlike :meth:`read_field`, this does not report what was typed into a
+        control: 10881 renders the committed volume, 11138/11139 render the
+        computed stop/target distance once a level commits (empty before). The
+        settle wait reads these, because they are the only pre-click surface
+        that reflects what an order would actually carry.
+        """
+        dialog = self.open_order_dialog()
+        for control in dialog.descendants():
+            if (
+                control.element_info.control_type == "Text"
+                and control.element_info.automation_id == automation_id
+            ):
+                try:
+                    return str(control.window_text() or "")
+                except AttributeError as exc:
+                    raise AutomationError(f"commit label {automation_id} cannot be read") from exc
+        raise AutomationError(f"commit label {automation_id} was not found")
 
     @staticmethod
     def _is_alive(element: Any) -> bool:
@@ -658,54 +719,59 @@ class MT5DesktopAdapter:
         self.selected_symbol = symbol.upper()
 
     def prepare_order(self, request: OrderRequest) -> None:
-        """Write every field, then wait until MT5 has actually applied all of them.
+        """Write every field with keystrokes, then wait until MT5 has committed them.
 
-        **The wait is the whole of this method's fix, and it is not a timeout.**
+        **Two halves, and both are load-bearing.**
 
-        MT5 applies a field written into the order dialog *asynchronously*. Measured
-        on Alpari build 6230, EURUSD, writing volume, stop loss and take profit in
-        order, the reading of each control caught up at roughly 250 ms, 500 ms and
-        800 ms respectively -- so for the best part of a second after the last write,
-        the dialog shows a mixture of the values just typed and the ones MT5 has not
-        got to yet.
+        The write half matters because of *how* MT5 commits. ``set_edit_text``
+        sets the control's text through the accessibility ValuePattern, which
+        bypasses the keystroke messages MT5 commits on: measured on Alpari
+        build 6230, the control then displays the typed value indefinitely
+        while MT5's committed order state keeps the defaults. A real EURUSD
+        order went out on exactly that basis at 0.01 lots with no stop loss
+        and no take profit, while the dialog read back the approved volume and
+        the dialog verifier compared those same readings and passed. So every
+        field is written with real keystrokes (select-all, then type), which
+        produce the change notifications MT5 actually applies.
 
-        An order sent inside that window is sent with whatever MT5 had committed at
-        that instant. This was not theoretical: a real EURUSD order was submitted
-        this way and came back with 0.01 lots, no stop loss and no take profit,
-        while the dialog had read back the approved volume and the dialog verifier
-        had compared those same readings and passed. The position was unprotected and
-        nothing noticed until verification compared it against the request.
-
-        Reading the field once -- which is all the original code did -- proves only
-        that the write reached the control. It says nothing about whether MT5 has
-        applied it, and the control's own `get_value()` happily reports the text it
-        is displaying while its internal state is still the old one.
-
-        So every written field is polled until it reads back as written, and a field
-        that never does is a refusal rather than a delay. Waiting a fixed interval
-        would be worse than the race: it makes the outcome depend on how fast the
-        machine happens to be today.
+        The wait half matters because the only trustworthy evidence of a
+        commit is MT5's own rendering of its committed state -- the volume
+        label and the stop/target distance labels -- not the fields that were
+        typed into, which display the typed text either way. Every written
+        field is polled until both its display *and* its commit witness agree,
+        and a field that never gets there is a refusal rather than a delay.
+        Waiting a fixed interval would be worse than the race: it makes the
+        outcome depend on how fast the machine happens to be today.
         """
         if self.selected_symbol != request.symbol:
             raise AutomationError("symbol was not selected")
         written: list[tuple[str, str]] = []
+        # Display text and commit-witness text per field *before* writing it,
+        # so the wait can tell "MT5 committed the new value" apart from
+        # "nothing changed". A requested value that already matches the
+        # pre-write display needs no commit: the dialog opened on MT5's
+        # committed defaults, so matching display means matching state.
+        pre_write: dict[str, tuple[str, str]] = {}
         try:
             self.window_manager.select_market_execution()
             volume = self._format_decimal(request.volume)
+            pre_write["10333"] = self._read_display_and_witness("10333")
             self.window_manager.set_field("10333", volume)
             written.append(("10333", volume))
             if request.stop_loss is not None:
                 stop = self._format_decimal(request.stop_loss)
+                pre_write["10334"] = self._read_display_and_witness("10334")
                 self.window_manager.set_field("10334", stop)
                 written.append(("10334", stop))
             if request.take_profit is not None:
                 target = self._format_decimal(request.take_profit)
+                pre_write["10336"] = self._read_display_and_witness("10336")
                 self.window_manager.set_field("10336", target)
                 written.append(("10336", target))
             if request.signal.comment:
                 self.window_manager.set_field("1001", request.signal.comment)
                 written.append(("1001", request.signal.comment))
-            self._await_fields_applied(written)
+            self._await_fields_applied(written, pre_write)
             self.prepared = request
             self._capture_baseline()
         except Exception:
@@ -714,21 +780,53 @@ class MT5DesktopAdapter:
         if self.gate.dry_run:
             self.window_manager.close_order_dialog()
 
+    def _read_display_and_witness(self, automation_id: str) -> tuple[str, str]:
+        """The field's displayed text and its commit witness, best effort.
+
+        A missing witness reads as ``""`` here rather than raising, because
+        this snapshot is evidence for the wait, not a verdict: if the label is
+        genuinely absent the wait will refuse on it soon enough.
+        """
+        try:
+            shown = self.window_manager.read_field(automation_id)
+        except AutomationError:
+            shown = ""
+        label_id = COMMIT_LABEL_FOR_FIELD.get(automation_id)
+        witness = ""
+        if label_id is not None:
+            try:
+                witness = self.window_manager.read_commit_label(label_id)
+            except AutomationError:
+                witness = ""
+        return (shown, witness)
+
     def _await_fields_applied(
-        self, written: list[tuple[str, str]], timeout_seconds: float = 5.0
+        self,
+        written: list[tuple[str, str]],
+        pre_write: dict[str, tuple[str, str]],
+        timeout_seconds: float = 5.0,
     ) -> None:
-        """Block until MT5 reports every written field, or refuse.
+        """Block until MT5 has committed every written field, or refuse.
 
-        Polls every field on every pass rather than each in turn, because they settle
-        concurrently and independently -- measured at 250/500/800 ms on this build --
-        and a field is only trustworthy once it reads back exactly as written.
+        Polls every field on every pass rather than each in turn, because they
+        settle concurrently and independently, and a field is only trustworthy
+        once it reads back exactly as written.
 
-        The comparison is on the *numeric* value, not the string. MT5 reformats what
-        it stores: a volume written as ``0.03`` came back ``0.03`` here, but a price
-        written with five decimals can come back with a trailing variant, and a
-        string comparison would then wait out the whole timeout and refuse an order
-        whose fields are in fact correct. A number that is not equal is still a
-        refusal; a number that is equal is accepted whichever way it was formatted.
+        The comparison is on the *numeric* value, not the string. MT5 reformats
+        what it stores: a volume written as ``0.03`` came back ``0.03`` here,
+        but a price written with five decimals can come back with a trailing
+        variant, and a string comparison would then wait out the whole timeout
+        and refuse an order whose fields are in fact correct. A number that is
+        not equal is still a refusal; a number that is equal is accepted
+        whichever way it was formatted.
+
+        Display agreement alone is not enough -- that is the defect this
+        method exists to close. A field with a commit witness (volume, stop,
+        target) must *also* show the witness moving off its pre-write text,
+        unless the requested value already matched the pre-write display, in
+        which case there was nothing for MT5 to commit. The witness is MT5's
+        own rendering of its committed state, the one surface a typed-into
+        field cannot fake.
         """
         deadline = time.monotonic() + timeout_seconds
         pending = list(written)
@@ -736,26 +834,49 @@ class MT5DesktopAdapter:
             still_pending: list[tuple[str, str]] = []
             for automation_id, expected in pending:
                 try:
-                    shown = self.window_manager.read_field(automation_id)
+                    if not self._field_committed(automation_id, expected, pre_write):
+                        still_pending.append((automation_id, expected))
                 except AutomationError:
                     still_pending.append((automation_id, expected))
                     continue
-                if _same_number(shown, expected):
-                    continue
-                still_pending.append((automation_id, expected))
             if not still_pending:
                 return
             if time.monotonic() >= deadline:
                 shown, expected = still_pending[0]
                 raise AutomationError(
-                    f"the order dialog did not apply {expected!r} to field "
-                    f"{shown!r} within {timeout_seconds:g}s; MT5 applies order fields "
-                    f"asynchronously and an order sent before it has would carry the "
-                    f"previous values. Refusing rather than sending a field MT5 has "
-                    f"not committed."
+                    f"the order dialog did not commit {expected!r} to field "
+                    f"{shown!r} within {timeout_seconds:g}s; MT5 commits order "
+                    f"fields on keystroke input and an order sent before it has "
+                    f"would carry the previous values. Refusing rather than "
+                    f"sending a field MT5 has not committed."
                 )
             pending = still_pending
             time.sleep(0.05)
+
+    def _field_committed(
+        self,
+        automation_id: str,
+        expected: str,
+        pre_write: dict[str, tuple[str, str]],
+    ) -> bool:
+        """Whether MT5's committed state holds the requested value.
+
+        Raises :class:`AutomationError` when the dialog cannot be read, so the
+        caller treats an unreadable dialog as not-yet-committed rather than as
+        committed.
+        """
+        shown = self.window_manager.read_field(automation_id)
+        if not _same_number(shown, expected):
+            return False
+        label_id = COMMIT_LABEL_FOR_FIELD.get(automation_id)
+        if label_id is None:
+            return True
+        previous_shown, previous_witness = pre_write.get(automation_id, ("", ""))
+        if _same_number(previous_shown, expected):
+            # Requested equals what the dialog already showed: a fresh dialog
+            # shows MT5's committed defaults, so there was nothing to commit.
+            return True
+        return self.window_manager.read_commit_label(label_id) != previous_witness
 
     def _capture_baseline(self) -> None:
         """Record the observed account state immediately before a final control.

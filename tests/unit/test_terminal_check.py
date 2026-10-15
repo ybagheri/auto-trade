@@ -34,9 +34,12 @@ from auto_trade.infrastructure.automation.execution import (
     BUY_BUTTON_NAME,
     SELL_BUTTON_ID,
     SELL_BUTTON_NAME,
+    STOP_LOSS_COMMIT_LABEL_ID,
     STOP_LOSS_FIELD_ID,
     SYMBOL_FIELD_ID,
+    TAKE_PROFIT_COMMIT_LABEL_ID,
     TAKE_PROFIT_FIELD_ID,
+    VOLUME_COMMIT_LABEL_ID,
     VOLUME_FIELD_ID,
 )
 from auto_trade.infrastructure.automation.window_manager import MT5WindowManager
@@ -92,6 +95,9 @@ def dialog_controls(
         FakeControl("Edit", "", VOLUME_FIELD_ID),
         FakeControl("Edit", "", STOP_LOSS_FIELD_ID),
         FakeControl("Edit", "", TAKE_PROFIT_FIELD_ID),
+        FakeControl("Text", "", VOLUME_COMMIT_LABEL_ID),
+        FakeControl("Text", "", STOP_LOSS_COMMIT_LABEL_ID),
+        FakeControl("Text", "", TAKE_PROFIT_COMMIT_LABEL_ID),
         FakeControl("Button", buy_name, buy_id),
         FakeControl("Button", SELL_BUTTON_NAME, sell_id),
         FakeControl("Button", "Market Execution", ""),
@@ -161,6 +167,21 @@ def test_a_moved_order_field_is_reported_missing() -> None:
     summary = summarise(probe_order_dialog(dialog))
 
     assert "symbol" in summary["missing"]
+
+
+def test_a_moved_commit_witness_is_reported_missing() -> None:
+    """A witness MT5 moved is a commit the order path can no longer observe."""
+    dialog = FakeElement(
+        [
+            control
+            for control in dialog_controls()
+            if control.element_info.automation_id != VOLUME_COMMIT_LABEL_ID
+        ]
+    )
+
+    summary = summarise(probe_order_dialog(dialog))
+
+    assert "volume_commit_label" in summary["missing"]
 
 
 def test_two_final_controls_with_one_name_is_ambiguous() -> None:

@@ -29,9 +29,12 @@ from .execution import (
     BUY_BUTTON_NAME,
     SELL_BUTTON_ID,
     SELL_BUTTON_NAME,
+    STOP_LOSS_COMMIT_LABEL_ID,
     STOP_LOSS_FIELD_ID,
     SYMBOL_FIELD_ID,
+    TAKE_PROFIT_COMMIT_LABEL_ID,
     TAKE_PROFIT_FIELD_ID,
+    VOLUME_COMMIT_LABEL_ID,
     VOLUME_FIELD_ID,
 )
 
@@ -44,6 +47,16 @@ EXPECTED_FIELDS: tuple[tuple[str, str], ...] = (
     ("volume", VOLUME_FIELD_ID),
     ("stop_loss", STOP_LOSS_FIELD_ID),
     ("take_profit", TAKE_PROFIT_FIELD_ID),
+)
+
+# Labels MT5 renders from its committed order state, which the settle wait
+# reads as commit witnesses. A label that moved is a label whose behaviour --
+# and, transitively, the commit it witnesses -- has not been established, so
+# it is reported the same way a moved field is.
+EXPECTED_COMMIT_LABELS: tuple[tuple[str, str], ...] = (
+    ("volume_commit_label", VOLUME_COMMIT_LABEL_ID),
+    ("stop_loss_commit_label", STOP_LOSS_COMMIT_LABEL_ID),
+    ("take_profit_commit_label", TAKE_PROFIT_COMMIT_LABEL_ID),
 )
 
 EXPECTED_FINAL_CONTROLS: tuple[tuple[str, str, str], ...] = (
@@ -112,6 +125,7 @@ def probe_order_dialog(dialog: Any) -> list[ControlReport]:
     controls = list(_descendants(dialog))
     reports: list[ControlReport] = []
     reports.extend(_probe_edits(controls))
+    reports.extend(_probe_commit_labels(controls))
     reports.extend(_probe_final_controls(controls))
     reports.extend(_probe_named(controls, "market_execution_button"))
     return reports
@@ -294,6 +308,31 @@ def _probe_edits(controls: list[Any]) -> list[ControlReport]:
                     ", ".join(sorted(item for item in known if item)) or "(no edit fields)",
                     "the dialog no longer exposes this field id; the order path would "
                     "refuse to prepare a request",
+                )
+            )
+    return reports
+
+
+TEXT = "Text"
+
+
+def _probe_commit_labels(controls: list[Any]) -> list[ControlReport]:
+    labels = [control for control in controls if _kind(control) == TEXT and _identifier(control)]
+    known = {_identifier(control) for control in labels}
+    reports: list[ControlReport] = []
+    for label, expected in EXPECTED_COMMIT_LABELS:
+        if expected in known:
+            reports.append(ControlReport(label, OK, expected, expected))
+        else:
+            reports.append(
+                ControlReport(
+                    label,
+                    MISSING,
+                    expected,
+                    ", ".join(sorted(item for item in known if item)) or "(no text labels)",
+                    "the dialog no longer exposes this commit witness; the order "
+                    "path waits on it before every click and would refuse to "
+                    "prepare a request",
                 )
             )
     return reports

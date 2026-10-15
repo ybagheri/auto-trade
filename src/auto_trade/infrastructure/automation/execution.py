@@ -32,6 +32,28 @@ VOLUME_FIELD_ID = "10333"
 STOP_LOSS_FIELD_ID = "10334"
 TAKE_PROFIT_FIELD_ID = "10336"
 
+# Labels MT5 itself renders from its COMMITTED order state, measured on Alpari
+# build 6230 with read-only probes (open the dialog, write, watch, close).
+# 10881 renders the committed volume ("0.01 US30", "5 000 EUR"); 11138/11139
+# stay empty until a stop loss / take profit commits, then render MT5's own
+# computed distance ("368 points, ~18 USD"). The settle wait reads these
+# rather than trusting the fields it typed into, because an Edit control
+# displays the typed text whether or not MT5 committed it -- which is exactly
+# how a real order went out at 0.01 lots with no stop and no target while every
+# field read back correct.
+VOLUME_COMMIT_LABEL_ID = "10881"
+STOP_LOSS_COMMIT_LABEL_ID = "11138"
+TAKE_PROFIT_COMMIT_LABEL_ID = "11139"
+
+# Which commit label witnesses which field. The symbol and the comment have
+# none: the symbol is verified by select_symbol's own read-back, and the
+# comment travels outside the order (it changes nothing MT5 commits).
+COMMIT_LABEL_FOR_FIELD: dict[str, str] = {
+    VOLUME_FIELD_ID: VOLUME_COMMIT_LABEL_ID,
+    STOP_LOSS_FIELD_ID: STOP_LOSS_COMMIT_LABEL_ID,
+    TAKE_PROFIT_FIELD_ID: TAKE_PROFIT_COMMIT_LABEL_ID,
+}
+
 ALLOWED_ACTIONS = {OrderAction.BUY, OrderAction.SELL}
 
 # Upper bound for the intra-dialog pre-submit pause. A value above this is

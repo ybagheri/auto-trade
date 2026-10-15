@@ -1,24 +1,22 @@
-"""MT5 applies order fields asynchronously, and the code did not wait for it.
+"""MT5 commits order fields on keystroke input, and the code wrote them another way.
 
 **The defect, and how it reached production.** `prepare_order` wrote the volume, the
-stop loss and the take profit, then read the volume **once**. That read proves the
-write reached the control. It says nothing about whether MT5 has applied it.
-
-Measured on Alpari build 6230, EURUSD, with the three fields written in order, the
-readings caught up at roughly **250 ms, 500 ms and 800 ms**. For the best part of a
-second after the last write, the dialog displays a mixture of the values just typed
-and the ones MT5 has not got to.
-
-An order sent in that window carries whatever MT5 had committed at that instant. This
-was not hypothetical: a real order went out this way and came back **0.01 lots with no
-stop loss and no take profit**, while the dialog read back the approved volume and
+stop loss and the take profit with `set_edit_text`, which sets the control's text
+through the accessibility ValuePattern and bypasses the keystroke messages MT5
+commits on. Measured on Alpari build 6230 with read-only probes: the control then
+displays the typed value indefinitely while MT5's committed order state keeps the
+defaults -- no waiting would ever change that, because there is nothing to wait
+for. A real order went out this way and came back **0.01 lots with no stop loss
+and no take profit**, while the dialog read back the approved volume and
 `confirm_dialog_matches` compared those same readings and passed. The position was
 unprotected, and nothing noticed until verification compared the fill against the
 request.
 
-The fix polls every written field until it reads back as written, and refuses if one
-never does. These tests drive that with a double that applies fields on a schedule, so
-the race is reproduced rather than described.
+The fix writes every field with real keystrokes and waits on MT5's own rendering
+of its committed state -- the volume label and the stop/target distance labels --
+rather than on the fields it typed into. These tests drive that with a double
+that models the two surfaces separately (display text vs committed state), so a
+write that never commits is reproduced rather than described.
 """
 
 from __future__ import annotations
@@ -47,20 +45,58 @@ _APPLIED = {
     "1001": "probe",
 }
 
+#: What the commit-witness labels render once MT5 has committed each level. The
+#: volume label renders the committed volume in base-currency units; the
+#: stop/target labels stay empty until a level commits, then render MT5's own
+#: computed distance. Measured on Alpari build 6230 with read-only probes.
+_APPLIED_LABELS = {
+    "10881": "3 000 EUR",
+    "11138": "300 points, ~15 USD",
+    "11139": "300 points, ~15 USD",
+}
+
+_DEFAULT_LABELS = {
+    "10881": "1 000 EUR",
+    "11138": "",
+    "11139": "",
+}
+
+#: Which commit label witnesses which field. Mirrors the production mapping so
+#: the double and the code cannot disagree about it silently.
+_FIELD_FOR_LABEL = {
+    "10881": "10333",
+    "11138": "10334",
+    "11139": "10336",
+}
+
 
 class SettlingManager(MT5WindowManager):
-    """A manager whose fields catch up after a delay, the way MT5's do.
+    """A manager with separate display and commit surfaces, the way MT5 has.
 
-    ``pending`` maps a field id to the value it will report once applied. Until then
-    it reports the value the terminal would have shown -- the default -- which is
-    exactly the state the original code read and accepted.
+    ``settle_after_reads`` maps a field id to the number of display reads
+    before MT5 commits it; ``commit_settle_after_reads`` maps a *label* id to
+    the number of witness reads before the commit becomes visible there. A
+    label with no explicit schedule mirrors its field's, because one MT5
+    commit moves both surfaces together.
+
+    The two surfaces are independent on purpose: the incident this file is
+    about is a write that updated the display immediately and never committed,
+    which is exactly ``settle_after_reads={}`` with an infinite commit
+    schedule. A double with one shared surface could not express that state,
+    and every test in this file would pass on the defective code.
     """
 
-    def __init__(self, settle_after_reads: dict[str, int]) -> None:
+    def __init__(
+        self,
+        settle_after_reads: dict[str, int],
+        commit_settle_after_reads: dict[str, int] | None = None,
+    ) -> None:
         super().__init__()
         self.settle_after_reads = settle_after_reads
+        self.commit_settle_after_reads = commit_settle_after_reads or {}
         self.reads = 0
         self.field_reads: dict[str, int] = {}
+        self.commit_reads: dict[str, int] = {}
         self.closed = False
         self.selected = False
         self.written: list[tuple[str, str]] = []
@@ -78,8 +114,8 @@ class SettlingManager(MT5WindowManager):
 
     def set_field(self, automation_id: str, value: str) -> None:
         self.written.append((automation_id, value))
-        # The write is visible to the control immediately -- `set_edit_text` did its
-        # job -- but MT5 has not applied it yet.
+        # The write is visible to the control immediately -- keystrokes land in
+        # the edit -- but MT5 commits it on its own schedule.
         self.current[automation_id] = value
 
     def read_field(self, automation_id: str) -> str:
@@ -90,23 +126,41 @@ class SettlingManager(MT5WindowManager):
         # and the test failed on a field that was never the subject.
         #
         # Per-field is also what MT5 actually does: each field settles on its own
-        # schedule, which is why the measurement came back 250/500/800 ms rather than
-        # one number.
+        # schedule.
         self.reads += 1
         self.field_reads[automation_id] = self.field_reads.get(automation_id, 0) + 1
         delay = self.settle_after_reads.get(automation_id)
         if delay is None or self.field_reads[automation_id] >= delay:
-            # Settled: MT5 has committed the value, so the control reports it.
-            return self.applied.get(automation_id, self.current[automation_id])
+            # Settled -- but only a *written* field reports its applied value.
+            # Before anything is written the dialog shows MT5's committed
+            # defaults however many times it is read, which is what the
+            # pre-write snapshot in prepare_order observes.
+            if any(field == automation_id for field, _ in self.written):
+                return self.applied.get(automation_id, self.current[automation_id])
+            return self.default_for(automation_id)
         # **Not yet.** The write reached the control, so `current` holds the new text,
-        # but MT5 has not applied it -- and what MT5 holds is what an order would be
-        # sent with. The terminal's own default is what it shows meanwhile.
+        # but MT5 has not committed it -- and what MT5 holds is what an order would be
+        # sent with. The terminal's own default is what the control reports meanwhile.
         #
         # Returning `current` here instead would make the double say "already
         # applied", the wait would pass on the first pass, and every test in this
         # file would pass on the defective code. It took a failing assertion to notice
         # that the two branches were returning the same thing.
         return self.default_for(automation_id)
+
+    def read_commit_label(self, automation_id: str) -> str:
+        field = _FIELD_FOR_LABEL[automation_id]
+        if not any(written_field == field for written_field, _ in self.written):
+            # Nothing written: MT5 holds its committed defaults, whatever the
+            # display was asked to show.
+            return self.default_label_for(automation_id)
+        self.commit_reads[automation_id] = self.commit_reads.get(automation_id, 0) + 1
+        delay = self.commit_settle_after_reads.get(
+            automation_id, self.settle_after_reads.get(field, 1)
+        )
+        if self.commit_reads[automation_id] >= delay:
+            return self.applied_labels.get(automation_id, self.default_label_for(automation_id))
+        return self.default_label_for(automation_id)
 
     def close_order_dialog(self, timeout_seconds: float = 5.0) -> None:
         self.closed = True
@@ -117,12 +171,16 @@ class SettlingManager(MT5WindowManager):
     # -- the two states a field can be in --------------------------------------
     applied: dict[str, str] = {}
     defaults: dict[str, str] = {}
+    applied_labels: dict[str, str] = {}
 
     def default_for(self, automation_id: str) -> str:
         return self.defaults.get(
             automation_id,
             {"10333": "0.01", "10334": "0.00000", "10336": "0.00000"}.get(automation_id, ""),
         )
+
+    def default_label_for(self, automation_id: str) -> str:
+        return _DEFAULT_LABELS.get(automation_id, "")
 
 
 def _adapter(manager: MT5WindowManager, *, dry_run: bool = False) -> Any:
@@ -147,7 +205,7 @@ def _adapter(manager: MT5WindowManager, *, dry_run: bool = False) -> Any:
     return adapter
 
 
-def _request() -> OrderRequest:
+def _request(volume: Decimal = Decimal("0.03")) -> OrderRequest:
     # The shared helper rather than a hand-built dict. `TradeSignal.from_dict` wants
     # an ISO timestamp string and rejects a `datetime`, which is a small thing to
     # rediscover and has nothing to do with what these tests are about.
@@ -156,7 +214,7 @@ def _request() -> OrderRequest:
     data = signal_data() | {
         "symbol": "EURUSD",
         "action": "BUY",
-        "volume": Decimal("0.03"),
+        "volume": volume,
         "price": Decimal("1.12508"),
         "stop_loss": Decimal("1.12208"),
         "take_profit": Decimal("1.12808"),
@@ -171,12 +229,13 @@ class TestPrepareOrderWaitsForMT5ToApplyTheFields:
         # code read the volume once, saw its own write, and returned.
         manager = SettlingManager(settle_after_reads={"10334": 10**9, "10336": 10**9})
         manager.applied = {**_APPLIED, "10334": "0.00000", "10336": "0.00000"}
+        manager.applied_labels = _APPLIED_LABELS
         adapter = _adapter(manager)
 
         with pytest.raises(AutomationError) as raised:
             adapter.prepare_order(_request())
 
-        assert "did not apply" in str(raised.value)
+        assert "did not commit" in str(raised.value)
         assert "1.12208" in str(raised.value)
         assert adapter.prepared is None, (
             "prepare_order returned with a field MT5 had not applied, so the request "
@@ -186,6 +245,7 @@ class TestPrepareOrderWaitsForMT5ToApplyTheFields:
     def test_it_succeeds_once_every_field_has_settled(self) -> None:
         manager = SettlingManager(settle_after_reads={"10333": 2, "10334": 3, "10336": 4})
         manager.applied = _APPLIED
+        manager.applied_labels = _APPLIED_LABELS
         adapter = _adapter(manager)
 
         adapter.prepare_order(_request())
@@ -199,10 +259,12 @@ class TestPrepareOrderWaitsForMT5ToApplyTheFields:
         # settles in 900 ms costs 900 ms.
         fast = SettlingManager(settle_after_reads={"10336": 1})
         fast.applied = _APPLIED
+        fast.applied_labels = _APPLIED_LABELS
         _adapter(fast).prepare_order(_request())
 
         slow = SettlingManager(settle_after_reads={"10336": 40})
         slow.applied = _APPLIED
+        slow.applied_labels = _APPLIED_LABELS
         _adapter(slow).prepare_order(_request())
 
         assert slow.reads > fast.reads, (
@@ -226,6 +288,52 @@ class TestPrepareOrderWaitsForMT5ToApplyTheFields:
             adapter.prepare_order(_request())
 
         assert manager.closed is True
+
+
+class TestAWriteThatNeverCommitsIsRefused:
+    def test_display_correct_but_commit_absent_refuses(self) -> None:
+        # The incident, stated exactly: the write reached the control at once
+        # (every field reads back as written on the first read, the way
+        # `set_edit_text` leaves it) but MT5 never committed anything, so the
+        # commit witnesses still render the defaults. The old display-only wait
+        # passed this state and the click followed it; the commit-aware wait
+        # must refuse it.
+        manager = SettlingManager(
+            settle_after_reads={},
+            commit_settle_after_reads={
+                "10881": 10**9,
+                "11138": 10**9,
+                "11139": 10**9,
+            },
+        )
+        manager.applied = _APPLIED
+        manager.applied_labels = _DEFAULT_LABELS
+        adapter = _adapter(manager)
+
+        with pytest.raises(AutomationError, match="did not commit") as raised:
+            adapter.prepare_order(_request())
+
+        assert "0.03" in str(raised.value)
+        assert adapter.prepared is None, (
+            "prepare_order returned with MT5 holding the defaults behind a "
+            "correct-looking dialog, so the request was marked prepared and "
+            "the click would follow it at the wrong volume with no protection"
+        )
+        assert manager.closed is True
+
+    def test_requested_equals_default_needs_no_commit(self) -> None:
+        # The boundary the witness rule must respect: when the requested value
+        # already matches what the dialog showed before writing, MT5's
+        # committed state already holds it (a fresh dialog shows committed
+        # defaults), so an unchanged witness is agreement, not a stall.
+        manager = SettlingManager(settle_after_reads={})
+        manager.applied = {**_APPLIED, "10333": "0.01"}
+        manager.applied_labels = _APPLIED_LABELS
+        adapter = _adapter(manager)
+
+        adapter.prepare_order(_request(volume=Decimal("0.01")))
+
+        assert adapter.prepared is not None
 
 
 def manager_field_reads(manager: SettlingManager) -> int:
