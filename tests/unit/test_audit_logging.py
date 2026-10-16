@@ -72,3 +72,39 @@ def test_the_trail_does_not_propagate_to_the_root_logger(tmp_path: Path) -> None
 
     assert logger.logger.propagate is False
     assert logger.logger.level == logging.INFO
+
+
+def test_close_releases_the_file_handle(tmp_path: Path) -> None:
+    # The failure this guards against is Windows-only in effect: an open
+    # handle blocks rotation and deletion, so a long-running command that
+    # never closes its audit log can neither rotate nor clean up. Renaming
+    # the file proves the handle is gone -- it raises PermissionError while
+    # the handle is open, on exactly the platform the terminal runs on.
+    # (On Linux the rename succeeds either way, so the test passes there
+    # without proving anything; the assertion that matters is portable
+    # anyway: after close, no file handler remains.)
+    logger = AuditLogger(tmp_path / "logs")
+    logger.record(event("before close"))
+    logger.close()
+
+    assert [
+        handler
+        for handler in logging.getLogger(AUDIT_LOGGER_NAME).handlers
+        if isinstance(handler, RotatingFileHandler)
+    ] == []
+    (tmp_path / "logs" / "audit.log").rename(tmp_path / "audit.log.1")
+
+
+def test_close_is_idempotent_and_leaves_other_handlers_alone(
+    tmp_path: Path,
+) -> None:
+    logger = AuditLogger(tmp_path / "logs")
+    sentinel = logging.StreamHandler()
+    logger.logger.addHandler(sentinel)
+    try:
+        logger.close()
+        logger.close()
+        assert sentinel in logging.getLogger(AUDIT_LOGGER_NAME).handlers
+    finally:
+        logging.getLogger(AUDIT_LOGGER_NAME).removeHandler(sentinel)
+        sentinel.close()

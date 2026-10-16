@@ -53,3 +53,21 @@ class AuditLogger:
 
     def record(self, event: AuditEvent) -> None:
         self.logger.info(json.dumps(event.to_dict(), separators=(",", ":"), ensure_ascii=False))
+
+    def close(self) -> None:
+        """Release the audit file handle.
+
+        The handler stays open for the life of the process unless it is
+        closed, which on Windows blocks log rotation, deletion, and the
+        directory cleanup a long-running command would otherwise do on
+        shutdown. A one-shot command never needs this -- the process exit
+        releases the handle -- but a server that never exits (`api`,
+        `dashboard`) must call it when it stops. Only the file handlers this
+        class installed are touched; anything else on the logger is left
+        alone. Idempotent: closing twice removes nothing the second time.
+        """
+        for handler in list(self.logger.handlers):
+            if getattr(handler, "baseFilename", None) is None:
+                continue
+            self.logger.removeHandler(handler)
+            handler.close()
