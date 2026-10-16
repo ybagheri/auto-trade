@@ -1007,7 +1007,10 @@ class MT5DesktopAdapter:
         """Confirm the outcome against an independently observed position list.
 
         A snapshot that cannot be read, or a missing baseline, produces UNKNOWN.
-        Only exactly one new position matching symbol, side and volume is accepted.
+        Only exactly one new position matching symbol, side and volume is accepted,
+        and it must also carry the approved stop loss and take profit: a fill
+        with the right volume but no stop would otherwise verify clean, and an
+        unobserved level counts as a mismatch rather than as nothing to compare.
         The baseline and observed references travel with the result so a verified
         outcome can be traced back to the exact readings that produced it.
 

@@ -157,12 +157,35 @@ class MT5FilePositionSnapshotProvider:
             raise PositionSnapshotUnavailable(
                 "position entry has an invalid volume"
             ) from exc
+        stop_loss = _optional_price(entry, "sl")
+        take_profit = _optional_price(entry, "tp")
         try:
-            return PositionSnapshot(str(ticket), symbol, side, volume)
+            return PositionSnapshot(str(ticket), symbol, side, volume, stop_loss, take_profit)
         except ValueError as exc:
             raise PositionSnapshotUnavailable(
                 f"position entry failed domain validation: {exc}"
             ) from exc
+
+
+def _optional_price(entry: dict[str, Any], key: str) -> Decimal | None:
+    """A protection level from a snapshot entry, or ``None`` when absent.
+
+    The indicator writes ``0.0`` for a level the position does not carry and
+    omits nothing; either shape -- and a JSON null -- means "no level", which
+    verification compares against the approved one rather than defaulting. A
+    value that is present but not a number refuses the whole snapshot: a
+    skipped entry would under-count the book, and an under-count admits a
+    trade the concurrency gate should have refused.
+    """
+    if key not in entry or entry[key] is None:
+        return None
+    try:
+        value = Decimal(str(entry[key]).strip())
+    except (InvalidOperation, AttributeError, TypeError, ValueError) as exc:
+        raise PositionSnapshotUnavailable(
+            f"position entry has an invalid {key}"
+        ) from exc
+    return None if value == 0 else value
 
 
 def _sequence(document: dict[str, Any]) -> int:

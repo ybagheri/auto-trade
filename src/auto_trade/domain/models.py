@@ -248,6 +248,8 @@ class PositionSnapshot:
         symbol: str,
         side: str,
         volume: Decimal,
+        stop_loss: Decimal | None = None,
+        take_profit: Decimal | None = None,
     ) -> None:
         if not position_id.strip():
             raise ValueError("position_id is required")
@@ -255,10 +257,18 @@ class PositionSnapshot:
             raise ValueError("position side must be BUY or SELL")
         if volume <= 0:
             raise ValueError("position volume must be positive")
+        # The protection the position actually carries, when the source
+        # observes it. The Trade-grid reader does not (its row mapping covers
+        # symbol, ticket, side and volume only), so absence here means "not
+        # observed", never "no stop". Verification treats an unobserved level
+        # as a mismatch when one was approved -- failing closed is the only
+        # safe direction for a level nobody confirmed.
         self.position_id = position_id
         self.symbol = symbol.upper()
         self.side = side.upper()
         self.volume = volume
+        self.stop_loss = stop_loss
+        self.take_profit = take_profit
 
 
 class VerificationOutcome:
